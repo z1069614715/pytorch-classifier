@@ -153,7 +153,7 @@ image classifier implement in pytoch.
     default: False  
     是否进行知识蒸馏.  
   - **kd_method**  
-    type: string, default: AutoAugment, choices: ['SoftTarget', 'MGD', 'SP', 'AT']  
+    type: string, default: SoftTarget, choices: ['SoftTarget', 'MGD', 'SP', 'AT']  
     知识蒸馏类型. 
   - **kd_ratio**  
     type: float, default: 0.7  
