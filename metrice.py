@@ -68,7 +68,7 @@ def parse_opt():
                                                    num_workers=(0 if opt.test_tta else opt.workers))
 
         try:
-            with open(opt.label_path) as f:
+            with open(opt.label_path, encoding='utf-8') as f:
                 label = list(map(lambda x: x.strip(), f.readlines()))
         except Exception as e:
             with open(opt.label_path, encoding='gbk') as f:

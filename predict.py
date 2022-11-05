@@ -40,7 +40,7 @@ def parse_opt():
     test_transform = utils_aug.get_dataprocessing_teststage(train_opt, opt, torch.load(os.path.join(opt.save_path, 'preprocess.transforms')))
 
     try:
-        with open(opt.label_path) as f:
+        with open(opt.label_path, encoding='utf-8') as f:
             label = list(map(lambda x: x.strip(), f.readlines()))
     except Exception as e:
         with open(opt.label_path, encoding='gbk') as f:
