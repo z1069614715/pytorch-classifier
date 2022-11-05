@@ -195,7 +195,7 @@ def plot_train_batch(dataset, opt):
             x = mixup_data(x, opt)
 
         plt.figure(figsize=(10, 10))
-        for j in range(9):
+        for j in range(16):
             img = transforms.ToPILImage()(x[j])
 
             plt.subplot(4, 4, 1 + j)
