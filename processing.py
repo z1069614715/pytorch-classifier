@@ -1,13 +1,10 @@
 import warnings
-
 warnings.filterwarnings("ignore")
 import os, shutil, argparse
 import numpy as np
-from config.config import Config
 
-config = Config()
 # set random seed
-np.random.seed(config.random_seed)
+np.random.seed(0)
 
 '''
     This file help us to split the dataset.
