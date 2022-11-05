@@ -33,13 +33,14 @@ def parse_opt():
 
 if __name__ == '__main__':
     opt = parse_opt()
-    with open(opt.label_path, 'w+') as f:
+    with open(opt.label_path, 'w+', encoding='utf-8') as f:
         f.write('\n'.join(os.listdir(opt.data_path)))
 
-    for idx, i in enumerate(os.listdir(opt.data_path)):
-        os.rename(r'{}/{}'.format(opt.data_path, i), r'{}/{:0>4d}'.format(opt.data_path, idx))
-
     str_len = len(str(len(os.listdir(opt.data_path))))
+
+    for idx, i in enumerate(os.listdir(opt.data_path)):
+        os.rename(r'{}/{}'.format(opt.data_path, i), r'{}/{}'.format(opt.data_path, str(idx).zfill(str_len)))
+
     os.chdir(opt.data_path)
 
     for i in range(len(os.listdir(os.getcwd()))):
