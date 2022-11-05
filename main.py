@@ -25,7 +25,7 @@ def set_seed(seed):
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, default='resnet18', help='model name')
+    parser.add_argument('--model_name', type=str, default='resnet1811', help='model name')
     parser.add_argument('--pretrained', action="store_true", help='using pretrain weight')
     parser.add_argument('--weight', type=str, default='', help='loading weight path')
     parser.add_argument('--config', type=str, default='config/config.py', help='config path')
