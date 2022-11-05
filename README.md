@@ -99,7 +99,7 @@ image classifier implement in pytoch.
     default: False  
     是否在save_path参数的路径中继续训练未完成的任务.  
   - **loss**  
-    type: string, default: CrossEntropyLoss, choices: ['PolyLoss', 'CrossEntropyLoss', 'FocalLoss']
+    type: string, default: CrossEntropyLoss, choices: ['PolyLoss', 'CrossEntropyLoss', 'FocalLoss']  
     损失函数类型.  
   - **optimizer**  
     type: string, default: AdamW, choices: ['SGD', 'AdamW', 'RMSProp']  
