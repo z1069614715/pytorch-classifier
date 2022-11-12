@@ -23,6 +23,7 @@ def parse_opt():
     parser.add_argument('--test_tta', action="store_true", help='using TTA Tricks')
     parser.add_argument('--cam_visual', action="store_true", help='visual cam')
     parser.add_argument('--cam_type', type=str, choices=['GradCAM', 'HiResCAM', 'ScoreCAM', 'GradCAMPlusPlus', 'AblationCAM', 'XGradCAM', 'EigenCAM', 'FullGrad'], default='FullGrad', help='cam type')
+    parser.add_argument('--half', action="store_true", help='use FP16 half-precision inference')
 
     opt = parser.parse_known_args()[0]
 
@@ -30,7 +31,7 @@ def parse_opt():
         raise Exception('best.pt not found. please check your --save_path folder')
     ckpt = torch.load(os.path.join(opt.save_path, 'best.pt'))
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = ckpt['model']
+    model = (ckpt['model'] if opt.half else ckpt['model'].float())
     model.to(DEVICE)
     model.eval()
     train_opt = ckpt['opt']
@@ -59,7 +60,7 @@ if __name__ == '__main__':
         os.makedirs(os.path.join(save_path))
         result = []
         for file in tqdm.tqdm(os.listdir(opt.source)):
-            pred, pred_result = predict_single_image(os.path.join(opt.source, file), model, test_transform, DEVICE)
+            pred, pred_result = predict_single_image(os.path.join(opt.source, file), model, test_transform, DEVICE, half=opt.half)
             result.append('{},{},{}'.format(os.path.join(opt.source, file), label[pred], pred_result[pred]))
             
             plt.figure(figsize=(6, 6))
@@ -77,7 +78,7 @@ if __name__ == '__main__':
             f.write('img_path,pred_class,pred_class_probability\n')
             f.write('\n'.join(result))
     elif os.path.isfile(opt.source):
-        pred, pred_result = predict_single_image(opt.source, model, test_transform, DEVICE)
+        pred, pred_result = predict_single_image(opt.source, model, test_transform, DEVICE, half=opt.half)
         
         plt.figure(figsize=(6, 6))
         if opt.cam_visual:

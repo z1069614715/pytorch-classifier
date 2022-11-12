@@ -1,7 +1,7 @@
 import torch
 import torchvision.transforms as transforms
 from argparse import Namespace
-from utils.utils_aug import CutOut
+from utils.utils_aug import CutOut, Create_Albumentations_From_Name
 
 class Config:
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR
@@ -17,6 +17,8 @@ class Config:
         #     transforms.RandomVerticalFlip(p=0.5),
         # ]),
         # transforms.RandomRotation(45),
+        # Create_Albumentations_From_Name('PixelDropout', p=1.0),
+        # Create_Albumentations_From_Name('RandomGridShuffle', grid=(16, 16))
     ])
 
     def _get_opt(self):

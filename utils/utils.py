@@ -1,5 +1,5 @@
 from sklearn import utils
-import torch, itertools, os, time, thop, json, cv2
+import torch, itertools, os, time, thop, json, cv2, math
 import torch.nn as nn
 import torchvision.transforms as transforms
 import numpy as np
@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 from math import cos, pi
-from sklearn.metrics import classification_report, confusion_matrix, cohen_kappa_score
+from sklearn.metrics import classification_report, confusion_matrix, cohen_kappa_score, precision_score, recall_score, f1_score, accuracy_score
 from prettytable import PrettyTable
 from copy import deepcopy
 from argparse import Namespace
@@ -19,6 +19,7 @@ from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from collections import OrderedDict
 from .utils_aug import rand_bbox
+from pycm import ConfusionMatrix
 
 cnames = {
 'aliceblue':   '#F0F8FF',
@@ -162,6 +163,9 @@ cnames = {
 'yellow':    '#FFFF00',
 'yellowgreen':   '#9ACD32'}
 
+def str2float(data):
+    return (0.0 if type(data) is str else data)
+
 def save_model(path, **ckpt):
     torch.save(ckpt, path)
 
@@ -184,7 +188,6 @@ def mixup_data(x, opt, alpha=1.0):
     else:
         raise 'Unsupported MixUp Methods.'
     return mixed_x
-
 
 def plot_train_batch(dataset, opt):
     dataset.transform.transforms[-1] = transforms.ToTensor()
@@ -247,37 +250,6 @@ def plot_log(opt):
     plt.savefig(r'{}/learning_rate_curve.png'.format(opt.save_path))
 
 
-def plot_confusion_matrix(cm, classes, save_path, normalize=True, title='Confusion matrix', cmap=plt.cm.Blues, name='test'):
-    plt.figure(figsize=(min(len(classes), 30), min(len(classes), 30)))
-    if normalize:
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-    trained_classes = classes
-    plt.imshow(cm, interpolation='nearest', cmap=cmap)
-    plt.title(name + title, fontsize=min(len(classes), 30))  # title font size
-    tick_marks = np.arange(len(classes))
-    plt.xticks(np.arange(len(trained_classes)), classes, rotation=90, fontsize=min(len(classes), 30)) # X tricks font size
-    plt.yticks(tick_marks, classes, fontsize=min(len(classes), 30)) # Y tricks font size
-    thresh = cm.max() / 2.
-    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        plt.text(j, i, np.round(cm[i, j], 2), horizontalalignment="center",
-                 color="white" if cm[i, j] > thresh else "black", fontsize=min(len(classes), 30)) # confusion_matrix font size
-    plt.ylabel('True label', fontsize=min(len(classes), 30)) # True label font size
-    plt.xlabel('Predicted label', fontsize=min(len(classes), 30)) # Predicted label font size
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_path, 'confusion_matrix.png'), dpi=150)
-    plt.show()
-
-def save_confusion_matrix(cm, classes, save_path, normalize=True):
-    if normalize:
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-    str_arr = []
-    for class_, cm_ in zip(classes, cm):
-        str_arr.append('{},{}'.format(class_, ','.join(list(map(lambda x:'{:.4f}'.format(x), list(cm_))))))
-    str_arr.append(' ,{}'.format(','.join(classes)))
-
-    with open(os.path.join(save_path, 'confusion_matrix.csv'), 'w+') as f:
-        f.write('\n'.join(str_arr))
-
 class WarmUpLR:
     def __init__(self, optimizer, opt):
         self.optimizer = optimizer
@@ -306,7 +278,26 @@ class WarmUpLR:
                         1 + cos(pi * (self.current_epoch - self.warmup_epoch) / (self.max_epoch - self.warmup_epoch))) / 2
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
-
+    
+    def state_dict(self):
+        return {
+            'lr_min': self.lr_min,
+            'lr_max': self.lr_max,
+            'max_epoch': self.max_epoch,
+            'current_epoch': self.current_epoch,
+            'warmup_epoch': self.warmup_epoch,
+            'lr_scheduler': self.lr_scheduler.state_dict(),
+            'optimizer': self.optimizer.state_dict()
+        }
+    
+    def load_state_dict(self, state_dict):
+        self.lr_min = state_dict['lr_min']
+        self.lr_max = state_dict['lr_max']
+        self.max_epoch = state_dict['max_epoch']
+        self.current_epoch = state_dict['current_epoch']
+        self.warmup_epoch = state_dict['warmup_epoch']
+        self.optimizer.load_state_dict(state_dict['optimizer'])
+        self.lr_scheduler.load_state_dict(state_dict['lr_scheduler'])
 
 def show_config(opt):
     table = PrettyTable()
@@ -326,6 +317,35 @@ def show_config(opt):
 
         with open(os.path.join(opt['save_path'], 'param.json'), 'w+') as f:
             f.write(json.dumps(opt, indent=4, separators={':', ','}))
+
+def plot_confusion_matrix(cm, classes, save_path, normalize=True, title='Confusion matrix', cmap=plt.cm.Blues, name='test'):
+    plt.figure(figsize=(min(len(classes), 30), min(len(classes), 30)))
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    trained_classes = classes
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(name + title, fontsize=min(len(classes), 30))  # title font size
+    tick_marks = np.arange(len(classes))
+    plt.xticks(np.arange(len(trained_classes)), classes, rotation=90, fontsize=min(len(classes), 30)) # X tricks font size
+    plt.yticks(tick_marks, classes, fontsize=min(len(classes), 30)) # Y tricks font size
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, np.round(cm[i, j], 2), horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black", fontsize=min(len(classes), 30)) # confusion_matrix font size
+    plt.ylabel('True label', fontsize=min(len(classes), 30)) # True label font size
+    plt.xlabel('Predicted label', fontsize=min(len(classes), 30)) # Predicted label font size
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_path, 'confusion_matrix.png'), dpi=150)
+    plt.show()
+
+def save_confusion_matrix(cm, classes, save_path):
+    str_arr = []
+    for class_, cm_ in zip(classes, cm):
+        str_arr.append('{},{}'.format(class_, ','.join(list(map(lambda x:'{:.4f}'.format(x), list(cm_))))))
+    str_arr.append(' ,{}'.format(','.join(classes)))
+
+    with open(os.path.join(save_path, 'confusion_matrix.csv'), 'w+') as f:
+        f.write('\n'.join(str_arr))
 
 def cal_cm(y_true, y_pred, CLASS_NUM):
     y_true, y_pred = y_true.to('cpu').detach().numpy(), np.argmax(y_pred.to('cpu').detach().numpy(), axis=1)
@@ -385,58 +405,63 @@ class Test_Metrice:
         self.y_true = y_true
         self.y_pred = y_pred
         self.class_num = class_num
-        self.result = {str(i):{} for i in range(self.class_num)}
-
-    def cal_class_kappa(self):
-        for i in range(self.class_num):
-            y_true_class = np.where(self.y_true == i, 1, 0)
-            y_pred_class = np.where(self.y_pred == i, 1, 0)
-
-            self.result[str(i)]['kappa'] = cohen_kappa_score(y_true_class, y_pred_class)
+        self.result = {i:{} for i in range(self.class_num)}
+        self.metrice = ['PPV', 'TPR', 'AUC', 'AUPR', 'F05', 'F1', 'F2']
+        self.metrice_name = ['Precision', 'Recall', 'AUC', 'AUPR', 'F0.5', 'F1', 'F2', 'ACC']
     
     def __call__(self):
-        self.cal_class_kappa()
-        return self.result
+        cm = ConfusionMatrix(self.y_true, self.y_pred)
+        for j in range(len(self.metrice)):
+            for i in range(self.class_num):
+                self.result[i][self.metrice_name[j]] = str2float(eval('cm.{}'.format(self.metrice[j]))[i])
+
+        return self.result, cm
 
 def classification_metrice(y_true, y_pred, class_num, label, save_path):
-    cm = confusion_matrix(y_true, y_pred, labels=list(range(class_num)))
+    metrice = Test_Metrice(y_true, y_pred, class_num)
+    class_report, cm = metrice()
+    class_pa = np.diag(cm.to_array(normalized=True)) # mean class accuracy
     if class_num <= 50:
-        plot_confusion_matrix(cm, label, save_path)
-    save_confusion_matrix(cm, label, save_path)
-    cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-    class_pa = np.diag(cm) # mean class accuracy
-    class_report = classification_report(y_true, y_pred, output_dict=True)
-    extra_class_report = Test_Metrice(y_true, y_pred, class_num)()
+        plot_confusion_matrix(cm.to_array(), label, save_path)
+    save_confusion_matrix(cm.to_array(normalized=True), label, save_path)
 
-    cols_name = ['class', 'precision', 'recall', 'f1-score', 'kappa', 'accuracy']
+    table1_cols_name = ['class'] + metrice.metrice_name
+    table1 = PrettyTable()
+    table1.title = 'Per Class'
+    table1.field_names = table1_cols_name
+    with open(os.path.join(save_path, 'perclass_result.csv'), 'w+', encoding='utf-8') as f:
+        f.write(','.join(table1_cols_name) + '\n')
+        for i in range(class_num):
+            table1.add_row([label[i]] + ['{:.5f}'.format(class_report[i][j]) for j in table1_cols_name[1:-1]] + ['{:.5f}'.format(class_pa[i])])
+            f.write(','.join([label[i]] + ['{:.5f}'.format(class_report[i][j]) for j in table1_cols_name[1:-1]] + ['{:.5f}'.format(class_pa[i])]) + '\n')
+    print(table1)
+    
+    table2_cols_name = ['Accuracy', 'MPA', 'Kappa', 'Precision_Micro', 'Recall_Micro', 'F1_Micro', 'Precision_Macro', 'Recall_Macro', 'F1_Macro']
+    table2 = PrettyTable()
+    table2.title = 'Overall'
+    table2.field_names = table2_cols_name
+    with open(os.path.join(save_path, 'overall_result.csv'), 'w+', encoding='utf-8') as f:
+        data = ['{:.5f}'.format(str2float(cm.Overall_ACC)),
+                        '{:.5f}'.format(np.mean(class_pa)),
+                        '{:.5f}'.format(str2float(cm.Kappa)),
+                        '{:.5f}'.format(str2float(cm.PPV_Micro)),
+                        '{:.5f}'.format(str2float(cm.TPR_Micro)),
+                        '{:.5f}'.format(str2float(cm.F1_Micro)),
+                        '{:.5f}'.format(str2float(cm.PPV_Macro)),
+                        '{:.5f}'.format(str2float(cm.TPR_Macro)),
+                        '{:.5f}'.format(str2float(cm.F1_Macro)),
+        ]
 
-    table = PrettyTable()
-    table.title = 'Accuracy:{:.5f} MPA:{:.5f}'.format(class_report['accuracy'], np.mean(class_pa))
-    table.field_names = cols_name
-    for i in range(class_num):
-        table.add_row([label[i],
-                       '{:.5f}'.format(class_report[str(i)]['precision']),
-                       '{:.5f}'.format(class_report[str(i)]['recall']),
-                       '{:.5f}'.format(class_report[str(i)]['f1-score']),
-                       '{:.5f}'.format(extra_class_report[str(i)]['kappa']),
-                       '{:.5f}'.format(class_pa[i])
-                       ])
+        table2.add_row(data)
 
-    print(table)
+        f.write(','.join(table2_cols_name) + '\n')
+        f.write(','.join(data))
+    print(table2)
+
     with open(os.path.join(save_path, 'result.txt'), 'w+', encoding='utf-8') as f:
-        f.write(str(table))
-
-    with open(os.path.join(save_path, 'result.csv'), 'w+', encoding='utf-8') as f:
-        f.write(','.join(cols_name) + '\n')
-        f.write('\n'.join(['{},{}'.format(label[i], ','.join(
-            [
-                '{:.5f}'.format(class_report[str(i)]['precision']),
-                '{:.5f}'.format(class_report[str(i)]['recall']),
-                '{:.5f}'.format(class_report[str(i)]['f1-score']),
-                '{:.5f}'.format(extra_class_report[str(i)]['kappa']),
-                '{:.5f}'.format(class_pa[i])
-            ]
-        )) for i in range(class_num)]))
+        f.write(str(table1))
+        f.write('\n')
+        f.write(str(table2))
 
 def update_opt(a, b):
     b = vars(b)
@@ -608,9 +633,10 @@ def visual_tsne(feature, y_true, path, labels, save_path):
         f.write('\n'.join(['{},{},{:.0f},{:.0f}'.format(i, labels[j], k[0], k[1]) for i, j, k in zip(path, y_true, feature_tsne)]))
 
 
-def predict_single_image(path, model, test_transform, DEVICE):
+def predict_single_image(path, model, test_transform, DEVICE, half=False):
     pil_img = Image.open(path)
     tensor_img = test_transform(pil_img).unsqueeze(0).to(DEVICE)
+    tensor_img = (tensor_img.half() if half else tensor_img)
     if len(tensor_img.shape) == 5:
         tensor_img = tensor_img.reshape((tensor_img.size(0) * tensor_img.size(1), tensor_img.size(2), tensor_img.size(3), tensor_img.size(4)))
         pred_result = torch.softmax(model(tensor_img).mean(0), 0)
@@ -620,13 +646,10 @@ def predict_single_image(path, model, test_transform, DEVICE):
 
 class cam_visual:
     def __init__(self, model, test_transform, DEVICE, target_layers, opt):
-        self.model = model
         self.test_transform = test_transform
         self.DEVICE = DEVICE
-        self.target_layers = target_layers
-        self.opt = opt
 
-        self.cam_model = eval(opt.cam_type)(model=model, target_layers=[target_layers], use_cuda=torch.cuda.is_available())
+        self.cam_model = eval(opt.cam_type)(model=deepcopy(model).float(), target_layers=[target_layers], use_cuda=torch.cuda.is_available())
     
     def __call__(self, path, label):
         pil_img = Image.open(path)
@@ -693,3 +716,37 @@ def dict_to_PrettyTable(data, name):
     table.field_names = data_keys
     table.add_row(['{:.5f}'.format(data[i]) for i in data_keys])
     return str(table)
+
+def is_parallel(model):
+    # Returns True if model is of type DP or DDP
+    return type(model) in (nn.parallel.DataParallel, nn.parallel.DistributedDataParallel)
+
+def de_parallel(model):
+    # De-parallelize a model: returns single-GPU model if model is of type DP or DDP
+    return model.module if is_parallel(model) else model
+
+class ModelEMA:
+    """ Updated Exponential Moving Average (EMA) from https://github.com/rwightman/pytorch-image-models
+    Keeps a moving average of everything in the model state_dict (parameters and buffers)
+    For EMA details see https://www.tensorflow.org/api_docs/python/tf/train/ExponentialMovingAverage
+    """
+
+    def __init__(self, model, decay=0.9999, tau=2000, updates=0):
+        # Create EMA
+        self.ema = deepcopy(de_parallel(model)).eval()  # FP32 EMA
+        self.updates = updates  # number of EMA updates
+        self.decay = lambda x: decay * (1 - math.exp(-x / tau))  # decay exponential ramp (to help early epochs)
+        for p in self.ema.parameters():
+            p.requires_grad_(False)
+
+    def update(self, model):
+        # Update EMA parameters
+        self.updates += 1
+        d = self.decay(self.updates)
+
+        msd = de_parallel(model).state_dict()  # model state_dict
+        for k, v in self.ema.state_dict().items():
+            if v.dtype.is_floating_point:  # true for FP16 and FP32
+                v *= d
+                v += (1 - d) * msd[k].detach()
+        # assert v.dtype == msd[k].dtype == torch.float32, f'{k}: EMA {v.dtype} and model {msd[k].dtype} must be FP32'

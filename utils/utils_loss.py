@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-__all__ = ['PolyLoss', 'CrossEntropyLoss', 'FocalLoss']
+__all__ = ['PolyLoss', 'CrossEntropyLoss', 'FocalLoss', 'RDropLoss']
 
 class PolyLoss(torch.nn.Module):
     """
@@ -46,3 +46,34 @@ class FocalLoss(nn.Module):
         fl = torch.pow((1 - input_softmax), self.gamma) * ce
         fl = fl.sum(1) * self.weight[target.long()]
         return fl.mean()
+
+class RDropLoss(nn.Module):
+    def __init__(self, loss, a=0.3):
+        super(RDropLoss, self).__init__()
+        self.loss = loss
+        self.a = a
+
+    def forward(self, input, target: torch.Tensor) -> torch.Tensor:
+        if type(input) is list:
+            input1, input2 = input
+            main_loss = (self.loss(input1, target) + self.loss(input2, target)) * 0.5
+            kl_loss = self.compute_kl_loss(input1, input2)
+            return main_loss + self.a * kl_loss
+        else:
+            return self.loss(input, target)
+    
+    def compute_kl_loss(self, p, q, pad_mask=None):
+        p_loss = F.kl_div(F.log_softmax(p, dim=-1), F.softmax(q, dim=-1), reduction='none')
+        q_loss = F.kl_div(F.log_softmax(q, dim=-1), F.softmax(p, dim=-1), reduction='none')
+        
+        # pad_mask is for seq-level tasks
+        if pad_mask is not None:
+            p_loss.masked_fill_(pad_mask, 0.)
+            q_loss.masked_fill_(pad_mask, 0.)
+
+        # You can choose whether to use function "sum" and "mean" depending on your task
+        p_loss = p_loss.sum()
+        q_loss = q_loss.sum()
+
+        loss = (p_loss + q_loss) / 2
+        return loss

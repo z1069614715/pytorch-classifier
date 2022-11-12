@@ -1,7 +1,7 @@
 import torch
 import torchvision.transforms as transforms
 from argparse import Namespace
-from utils.utils_aug import CutOut
+from utils.utils_aug import CutOut, Create_Albumentations_From_Name
 
 class Config:
     lr_scheduler = torch.optim.lr_scheduler.StepLR

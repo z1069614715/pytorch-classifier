@@ -254,6 +254,86 @@
 | ghostnet | 0.77709 | 0.77756 | 0.76367  | 0.76277 | 0.78046 | 0.77958 |
 | teacher->ghostnet<br>student->ghostnet<br>AT | 0.78046 | 0.78080 | 0.77142 | 0.77069 | 0.78820 | 0.78742 |
 
+### 在V1.1版本的测试中发现efficientnet_v2网络作为teacher网络效果还不错.
+
+普通训练mobilenetv2：  
+
+    python main.py --model_name mobilenetv2 --config config/config.py --save_path runs/mobilenetv2 --lr 1e-4 --Augment AutoAugment --epoch 150 \
+    --pretrained --amp --warmup --imagenet_meanstd
+
+计算mobilenetv2指标:  
+    
+    python metrice.py --task val --save_path runs/mobilenetv2
+    python metrice.py --task test --save_path runs/mobilenetv2
+    python metrice.py --task test --save_path runs/mobilenetv2 --test_tta
+
+普通训练efficientnet_v2_s：  
+
+    python main.py --model_name efficientnet_v2_s --config config/config.py --save_path runs/efficientnet_v2_s --lr 1e-4 --Augment AutoAugment --epoch 150 \
+    --pretrained --amp --warmup --imagenet_meanstd
+
+计算efficientnet_v2_s指标:  
+    
+    python metrice.py --task val --save_path runs/efficientnet_v2_s
+    python metrice.py --task test --save_path runs/efficientnet_v2_s
+    python metrice.py --task test --save_path runs/efficientnet_v2_s --test_tta
+
+知识蒸馏, efficientnet_v2_s作为teacher, mobilenetv2作为student, 使用SoftTarget进行蒸馏:  
+
+    python main.py --model_name mobilenetv2 --config config/config.py --save_path runs/mobilenetv2_ST --lr 1e-4 --Augment AutoAugment --epoch 150 \
+    --pretrained --amp --warmup --imagenet_meanstd \
+    --kd --kd_method SoftTarget --kd_ratio 0.7 --teacher_path runs/efficientnet_v2_s
+
+知识蒸馏, efficientnet_v2_s作为teacher, mobilenetv2作为student, 使用MGD进行蒸馏:  
+
+    python main.py --model_name mobilenetv2 --config config/config.py --save_path runs/mobilenetv2_MGD --lr 1e-4 --Augment AutoAugment --epoch 150 \
+    --pretrained --amp --warmup --imagenet_meanstd \
+    --kd --kd_method MGD --kd_ratio 0.7 --teacher_path runs/efficientnet_v2_s
+
+    python main.py --model_name mobilenetv2 --config config/config.py --save_path runs/mobilenetv2_MGD_EMA --lr 1e-4 --Augment AutoAugment --epoch 150 \
+    --pretrained --amp --warmup --imagenet_meanstd --ema \
+    --kd --kd_method MGD --kd_ratio 0.7 --teacher_path runs/efficientnet_v2_s
+
+    python main.py --model_name mobilenetv2 --config config/config.py --save_path runs/mobilenetv2_MGD_RDROP --lr 1e-4 --Augment AutoAugment --epoch 150 \
+    --pretrained --amp --warmup --imagenet_meanstd --rdrop \
+    --kd --kd_method MGD --kd_ratio 0.7 --teacher_path runs/efficientnet_v2_s
+
+    python main.py --model_name mobilenetv2 --config config/config.py --save_path runs/mobilenetv2_MGD_EMA_RDROP --lr 1e-4 --Augment AutoAugment --epoch 150 \
+    --pretrained --amp --warmup --imagenet_meanstd --rdrop --ema \
+    --kd --kd_method MGD --kd_ratio 0.7 --teacher_path runs/efficientnet_v2_s
+
+计算通过efficientnet_v2_s蒸馏mobilenetv2指标:  
+
+    python metrice.py --task val --save_path runs/mobilenetv2_ST
+    python metrice.py --task test --save_path runs/mobilenetv2_ST
+    python metrice.py --task test --save_path runs/mobilenetv2_ST --test_tta
+
+    python metrice.py --task val --save_path runs/mobilenetv2_MGD
+    python metrice.py --task test --save_path runs/mobilenetv2_MGD
+    python metrice.py --task test --save_path runs/mobilenetv2_MGD --test_tta
+
+    python metrice.py --task val --save_path runs/mobilenetv2_MGD_EMA
+    python metrice.py --task test --save_path runs/mobilenetv2_MGD_EMA
+    python metrice.py --task test --save_path runs/mobilenetv2_MGD_EMA --test_tta
+
+    python metrice.py --task val --save_path runs/mobilenetv2_MGD_RDROP
+    python metrice.py --task test --save_path runs/mobilenetv2_MGD_RDROP
+    python metrice.py --task test --save_path runs/mobilenetv2_MGD_RDROP --test_tta
+
+    python metrice.py --task val --save_path runs/mobilenetv2_MGD_EMA_RDROP
+    python metrice.py --task test --save_path runs/mobilenetv2_MGD_EMA_RDROP
+    python metrice.py --task test --save_path runs/mobilenetv2_MGD_EMA_RDROP --test_tta
+
+| model | val accuracy | val mpa | test accuracy | test mpa | test accuracy(TTA) | test mpa(TTA) |
+| :----: | :----: | :----: | :----: | :----: | :----: | :----: |
+| mobilenetv2 | 0.74116 | 0.74200 | 0.73483 | 0.73452 | 0.77012 | 0.76979 |
+| efficientnet_v2_s | 0.84166 | 0.84191 | 0.84460 | 0.84441 | 0.86483 | 0.86484 |
+| teacher->efficientnet_v2_s<br>student->mobilenetv2<br>ST | 0.76137 | 0.76209 | 0.75161 | 0.75088 | 0.77830 | 0.77715 |
+| teacher->efficientnet_v2_s<br>student->mobilenetv2<br>MGD | 0.77204 | 0.77288 | 0.77529 | 0.77464 | 0.79337 | 0.79261 |
+| teacher->efficientnet_v2_s<br>student->mobilenetv2<br>MGD(EMA) | 0.77204 | 0.77267 | 0.77744 | 0.77671 | 0.80284 | 0.80201 |
+| teacher->efficientnet_v2_s<br>student->mobilenetv2<br>MGD(RDrop) | 0.77204 | 0.77288 | 0.77529 | 0.77464 | 0.79337 | 0.79261 |
+| teacher->efficientnet_v2_s<br>student->mobilenetv2<br>MGD(EMA,RDrop) | 0.77204 | 0.77267 | 0.77744 | 0.77671 | 0.80284 | 0.80201 |
+
 ## 关于Knowledge Distillation的一些解释
 
 实验解释:  

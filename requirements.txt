@@ -7,3 +7,5 @@ prettytable
 pillow
 thop
 rfconv
+albumentations
+pycm

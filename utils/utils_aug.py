@@ -3,6 +3,7 @@ import torchvision.transforms as transforms
 import numpy as np
 from PIL import Image
 from copy import deepcopy
+import albumentations as A
 
 def get_mean_and_std(dataset, opt):
     '''Compute the mean and std value of dataset.'''
@@ -161,3 +162,16 @@ class CutOut(object):
     
     def __str__(self):
         return 'CutOut'
+
+class Create_Albumentations_From_Name(object):
+    # https://albumentations.ai/docs/api_reference/augmentations/transforms/
+    def __init__(self, name, **kwargs):
+        self.name = name
+        self.transform = eval('A.{}'.format(name))(**kwargs)
+
+    def __call__(self, img):
+        img = np.array(img)
+        return Image.fromarray(np.array(self.transform(image=img)['image'], dtype=np.uint8))
+    
+    def __str__(self):
+        return self.name

@@ -21,13 +21,14 @@ def parse_opt():
     parser.add_argument('--val_path', type=str, default=r'dataset/val', help='val data path')
     parser.add_argument('--test_path', type=str, default=r'dataset/test', help='test data path')
     parser.add_argument('--label_path', type=str, default=r'dataset/label.txt', help='label path')
-    parser.add_argument('--task', type=str, choices=['train', 'val', 'test', 'fps'], default='test', help='train, val, test, fps')
+    parser.add_argument('--task', type=str, choices=['train', 'val', 'test', 'fps'], default='val', help='train, val, test, fps')
     parser.add_argument('--workers', type=int, default=4, help='dataloader workers')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
-    parser.add_argument('--save_path', type=str, default=r'runs/exp', help='save path for model and log')
+    parser.add_argument('--save_path', type=str, default=r'runs/mobilenetv2_ST', help='save path for model and log')
     parser.add_argument('--test_tta', action="store_true", help='using TTA Tricks')
     parser.add_argument('--visual', action="store_true", help='visual dataset identification')
     parser.add_argument('--tsne', action="store_true", help='visual tsne')
+    parser.add_argument('--half', action="store_true", help='use FP16 half-precision inference')
 
     opt = parser.parse_known_args()[0]
 
@@ -35,7 +36,7 @@ def parse_opt():
         raise Exception('best.pt not found. please check your --save_path folder')
     ckpt = torch.load(os.path.join(opt.save_path, 'best.pt'))
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = ckpt['model']
+    model = (ckpt['model'] if opt.half else ckpt['model'].float())
     model.to(DEVICE)
     model.eval()
     train_opt = ckpt['opt']
@@ -47,6 +48,8 @@ def parse_opt():
 
     if opt.task == 'fps':
         inputs = torch.rand((opt.batch_size, train_opt.image_channel, train_opt.image_size, train_opt.image_size)).to(DEVICE)
+        if opt.half:
+            inputs = inputs.half()
         warm_up, test_time = 100, 300
         fps_arr = []
         for i in tqdm.tqdm(range(test_time + warm_up)):
@@ -55,7 +58,7 @@ def parse_opt():
             if i > warm_up:
                 fps_arr.append(time.time() - since)
         fps = np.mean(fps_arr)
-        print('{:.6f} seconds, {:.4f} fps, @batch_size {}'.format(fps, 1 / fps, opt.batch_size))
+        print('{:.6f} seconds, {:.2f} fps, @batch_size {}'.format(fps, 1 / fps, opt.batch_size))
         sys.exit(0)
     else:
         save_path = os.path.join(opt.save_path, opt.task, datetime.datetime.strftime(datetime.datetime.now(),'%Y_%m_%d_%H_%M_%S'))
@@ -83,7 +86,7 @@ if __name__ == '__main__':
     model.eval()
     with torch.no_grad():
         for x, y, path in tqdm.tqdm(test_dataset, desc='Test Stage'):
-            x = x.to(DEVICE)
+            x = (x.half().to(DEVICE) if opt.half else x.to(DEVICE))
             if opt.test_tta:
                 bs, ncrops, c, h, w = x.size()
                 pred = model(x.view(-1, c, h, w))
@@ -93,10 +96,10 @@ if __name__ == '__main__':
                     pred_feature = model.forward_features(x.view(-1, c, h, w))
                     pred_feature = pred_feature.view(bs, ncrops, -1).mean(1)
             else:
-                pred = model(x.float())
+                pred = model(x)
 
                 if opt.tsne:
-                    pred_feature = model.forward_features(x.float())
+                    pred_feature = model.forward_features(x)
             pred = torch.softmax(pred, 1)
             y_true.extend(list(y.cpu().detach().numpy()))
             y_pred.extend(list(pred.argmax(-1).cpu().detach().numpy()))
