@@ -536,7 +536,7 @@ image classifier implement in pytoch.
 
 ## TODO
 - [x] Knowledge Distillation
-- [ ] EMA
+- [x] EMA
 - [x] R-Drop
 - [ ] SWA
 - [ ] DDP Mode
