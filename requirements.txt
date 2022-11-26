@@ -1,3 +1,7 @@
+# Pytorch-Classifier requirements
+# Usage: pip install -r requirements.txt
+
+# Base ------------------------------------------------------------------------
 opencv-python
 grad-cam
 timm
@@ -9,3 +13,13 @@ thop
 rfconv
 albumentations
 pycm
+
+# Export ----------------------------------------------------------------------
+# onnx # ONNX export
+# onnx-simplifier # ONNX simplifier
+# nvidia-pyindex  # TensorRT export
+# nvidia-tensorrt # TensorRT export
+
+# Export Inference ----------------------------------------------------------------
+# onnxruntime # ONNX CPU Inference
+# onnxruntime-gpu # ONNX GPU Inference

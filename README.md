@@ -2,6 +2,16 @@
 
 image classifier implement in pytoch.
 
+# Directory
+1. **[Introduction](#Introduction)**
+2. **[How to use](#Howtouse)**
+3. **[Argument Explanation](#ArgumentExplanation)**
+4. **[Model Zoo](#ModelZoo)**
+5. **[Some explanation](#Someexplanation)**
+6. **[TODO](#TODO)**
+7. **[Reference](#Reference)**
+
+<a id="Introduction"></a>
 ## Introduction  
 
 为什么推荐你使用这个代码?
@@ -15,7 +25,7 @@ image classifier implement in pytoch.
   7. 总体精度可视化.(kappa,precision,recll,f1,accuracy,mpa)
 
 - **丰富的模型库**  
-  1. 由作者整合的丰富模型库,主流的模型基本全部支持,支持的模型个数高达50+,其全部支持ImageNet的预训练权重,[详细请看Model Zoo.(变形金刚系列后续更新)](#3)
+  1. 由作者整合的丰富模型库,主流的模型基本全部支持,支持的模型个数高达50+,其全部支持ImageNet的预训练权重,[详细请看Model Zoo.(变形金刚系列后续更新)](#ModelZoo)
   2. 目前支持的模型都是通过作者从github和torchvision整合,因此支持修改、改进模型进行实验,并不是直接调用库创建模型.
 
 - **丰富的训练策略**
@@ -33,6 +43,9 @@ image classifier implement in pytoch.
 - **丰富的学习率调整策略**  
   本程序支持学习率预热,支持预热后的自定义学习率策略.[详细看Some explanation第五点](#1)
 
+- **支持导出各种常用推理框架模型**
+  目前支持导出torchscript,onnx,tensorrt推理模型.
+
 <a id="6"></a>
 
 - **简单的安装过程**  
@@ -44,10 +57,14 @@ image classifier implement in pytoch.
   1. 大部分可视化数据(混淆矩阵,tsne,每个类别的指标)都会以csv或者log的格式保存到本地,方便后期美工图像.
   2. 程序大部分输出信息使用PrettyTable进行美化输出,大大增加可观性.
 
+<a id="Howtouse"></a>
+
 ## How to use
   
   1. 安装程序所需的[环境](#6).
   2. 根据[Some explanation中的第三点](#5)处理好数据集.
+
+<a id="ArgumentExplanation"></a>
 
 ## Argument Explanation
 
@@ -66,6 +83,9 @@ image classifier implement in pytoch.
   - **config**  
     type: string, default: config/config.py  
     配置文件的路径.
+  - **device**  
+    type: string, default: ''  
+    使用的设备.(cuda device, i.e. 0 or 0,1,2,3 or cpu)  
   - **train_path**  
     type: string, default: dataset/train  
     训练集的路径.
@@ -165,6 +185,9 @@ image classifier implement in pytoch.
   - **rdrop**  
     default: False 
     是否采用R-Drop.(不支持知识蒸馏)
+  - **ema**  
+    default: False  
+    是否采用EMA.(不支持知识蒸馏)  
 - **metrice.py**  
   实现计算指标的主要程序.  
   参数解释:  
@@ -179,7 +202,10 @@ image classifier implement in pytoch.
     测试集的路径.  
   - **label_path**  
     type: string, default: dataset/label.txt  
-    标签的路径.  
+    标签的路径. 
+  - **device**  
+    type: string, default: ''  
+    使用的设备.(cuda device, i.e. 0 or 0,1,2,3 or cpu)  
   - **task**  
     type: string, default: test, choices: ['train', 'val', 'test', 'fps']  
     任务类型.选择fps就是单独计算fps指标,选择train、val、test就是计算其指标.
@@ -222,7 +248,9 @@ image classifier implement in pytoch.
   - **cam_type**  
     type: string, default: GradCAMPlusPlus, choices: ['GradCAM', 'HiResCAM', 'ScoreCAM', 'GradCAMPlusPlus', 'AblationCAM', 'XGradCAM', 'EigenCAM', 'FullGrad']  
     热力图可视化的类型.  
-
+  - **device**  
+    type: string, default: ''  
+    使用的设备.(cuda device, i.e. 0 or 0,1,2,3 or cpu)  
 - **processing.py**  
   实现预处理数据集的主要程序.  
   参数解释:  
@@ -238,7 +266,6 @@ image classifier implement in pytoch.
   - **test_size**  
     type: float, default: 0.2  
     测试集的比例.  
-
 - **config/config.py**  
   一些额外的参数配置文件.  
   参数解释:
@@ -246,26 +273,55 @@ image classifier implement in pytoch.
     default: None  
     Example: lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR  
     自定义的学习率调整器.  
-  
   - **lr_scheduler_params**  
     default: {'T_max': 10,'eta_min': 1e-6}  
     Example: lr_scheduler_params = {'step_size': 1,'gamma': 0.95} (此处默认为lr_scheduler = torch.optim.lr_scheduler.StepLR)  
     自定义的学习率调整器的参数,参数需与lr_scheduler匹配.  
-  
   - **random_seed**  
     default: 0  
     随机种子设定值.  
-  
   - **plot_train_batch_count**  
     default: 5  
     训练过程可视化数据的生成数量.  
-  
   - **custom_augment**  
     default: transforms.Compose([])  
     Example: transforms.Compose([transforms.RandomHorizontalFlip(p=0.5),transforms.RandomRotation(degrees=20),])  
     自定义的数据增强.  
+- **export.py**  
+  导出模型的文件.目前支持torchscript,onnx.
+  参数解释:
+  - **save_path**  
+    type: string, default: runs/exp  
+    保存的模型路径,也是保存转换结果的路径.  
+  - **image_size**  
+    type: int, default: 224  
+    输入模型的图像尺寸大小.  
+  - **image_channel**  
+    type:int, default: 3  
+    输入模型的图像通道大小.(目前只支持三通道)  
+  - **batch_size**  
+    type: int, default: 1  
+    单次测试所选取的样本个数.
+  - **dynamic**  
+    default: False  
+    onnx中的dynamic参数.
+  - **simplify**  
+    default: False  
+    onnx中的simplify参数.  
+  - **half**  
+    default: False  
+    FP16模型导出.(仅支持GPU环境导出)
+  - **verbose**  
+    default: False  
+    导出tensorrt时是否显示日志.
+  - **export**  
+    type: string, default: torchscript  choices: ['onnx', 'torchscript', 'tensorrt']
+    选择导出模型.
+  - **device**  
+    type: string, default: torchscript  
+    使用的设备.(cuda device, i.e. 0 or 0,1,2,3 or cpu)  
 
-<p id="3"></p>
+<p id="ModelZoo"></p>
 
 ## Model Zoo  
 
@@ -287,6 +343,8 @@ image classifier implement in pytoch.
   | darknet | darknet53,darknetaa53 |
   | cspnet | cspresnet50,cspresnext50,cspdarknet53,cs3darknet_m,cs3darknet_l,cs3darknet_x,cs3darknet_focus_m,cs3darknet_focus_l<br>cs3sedarknet_l,cs3sedarknet_x,cs3edgenet_x,cs3se_edgenet_x |
   | dpn | dpn68,dpn68b,dpn92,dpn98,dpn107,dpn131 |
+
+<a id="Someexplanation"></a>
 
 ## Some explanation  
   1. 关于cpu和gpu的问题.  
@@ -526,13 +584,20 @@ image classifier implement in pytoch.
   
   <p id="5"></p>
 
-  17. 关于如何使用albumentations的数据增强问题.
-
+  17. 关于如何使用albumentations的数据增强问题.  
     我们可以在[albumentations的github](https://github.com/albumentations-team/albumentations)或者[albumentations的官方网站](https://albumentations.ai/docs/api_reference/augmentations/)中找到自己需要的数据增强的名字,比如[RandomGridShuffle](https://github.com/albumentations-team/albumentations#:~:text=%E2%9C%93-,RandomGridShuffle,-%E2%9C%93)的方法,我们可以在config/config.py中进行创建:
     Create_Albumentations_From_Name('RandomGridShuffle')
     还有些使用者可能需要修改其默认参数,参数可以在其api文档中找到,我们的函数也是支持修改参数的,比如这个RandomGridShuffle函数有一个grid的参数,具体方法如下:
     Create_Albumentations_From_Name('RandomGridShuffle', grid=(3, 3))
     不止一个参数的话直接也是在后面加即可,但是需要指定其参数的名字.
+  
+  18. 关于export文件的一些解释.  
+    1. tensorrt建议在ubuntu上使用,并且tensorrt只支持在gpu上导出和推理.  
+    2. FP16仅支持在gpu上导出和推理.  
+    3. FP16模式不能与dynamic模式一并使用.  
+    4. 详细GPU和CPU的推理速度实验请看[v1.2更新日志](v1.2-update_log.md).
+
+<a id="TODO"></a>
 
 ## TODO
 - [x] Knowledge Distillation
@@ -540,12 +605,15 @@ image classifier implement in pytoch.
 - [x] R-Drop
 - [ ] SWA
 - [ ] DDP Mode
-- [ ] Export Model(onnx, tensorrt, torchscript)  
+- [x] Export Model(onnx, torchscript, TensorRT)  
 - [ ] C++ Inference Code  
 - [ ] Accumulation Gradient  
 - [ ] Model Ensembling  
 - [ ] Freeze Training  
+- [ ] Support Fuse Conv and Bn  
 - [x] Early Stop  
+
+<a id="Reference"></a>
 
 ## Reference
 

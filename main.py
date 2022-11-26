@@ -12,7 +12,7 @@ from utils.utils_fit import fitting, fitting_distill
 from utils.utils_model import select_model
 from utils import utils_aug
 from utils.utils import save_model, plot_train_batch, WarmUpLR, show_config, setting_optimizer, check_batch_size, \
-    plot_log, update_opt, load_weights, get_channels, dict_to_PrettyTable, ModelEMA
+    plot_log, update_opt, load_weights, get_channels, dict_to_PrettyTable, ModelEMA, select_device
 from utils.utils_distill import *
 from utils.utils_loss import *
 
@@ -29,6 +29,7 @@ def parse_opt():
     parser.add_argument('--pretrained', action="store_true", help='using pretrain weight')
     parser.add_argument('--weight', type=str, default='', help='loading weight path')
     parser.add_argument('--config', type=str, default='config/config.py', help='config path')
+    parser.add_argument('--device', type=str, default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
 
     parser.add_argument('--train_path', type=str, default=r'dataset/train', help='train data path')
     parser.add_argument('--val_path', type=str, default=r'dataset/val', help='val data path')
@@ -76,7 +77,7 @@ def parse_opt():
 
     # Tricks parameters
     parser.add_argument('--rdrop', action="store_true", help='using R-Drop')
-    parser.add_argument('--ema', action="store_true", help='using EMA(Exponential Moving Average)')
+    parser.add_argument('--ema', action="store_true", help='using EMA(Exponential Moving Average) Reference to YOLOV5')
 
     opt = parser.parse_known_args()[0]
     if opt.resume:
@@ -100,7 +101,7 @@ def parse_opt():
     show_config(deepcopy(opt))
 
     CLASS_NUM = len(os.listdir(opt.train_path))
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    DEVICE = select_device(opt.device, opt.batch_size)
 
     train_transform, test_transform = utils_aug.get_dataprocessing(torchvision.datasets.ImageFolder(opt.train_path),
                                                                    opt)
@@ -126,9 +127,7 @@ def parse_opt():
     test_dataset = torch.utils.data.DataLoader(test_dataset, max(batch_size // (10 if opt.test_tta else 1), 1),
                                                shuffle=False, num_workers=(0 if opt.test_tta else opt.workers))
     scaler = torch.cuda.amp.GradScaler(enabled=(opt.amp if torch.cuda.is_available() else False))
-    ema = None
-    if opt.ema:
-        ema = ModelEMA(model)
+    ema = ModelEMA(model) if opt.ema else None
     optimizer = setting_optimizer(opt, model)
     lr_scheduler = WarmUpLR(optimizer, opt)
     if opt.resume:
@@ -181,7 +180,7 @@ if __name__ == '__main__':
             elif opt.kd_method == 'AT':
                 kd_loss = AT().to(DEVICE)
 
-    print('{} begin train on {}!'.format(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), DEVICE))
+    print('{} begin train!'.format(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
     for epoch in range(begin_epoch, opt.epoch):
         if epoch > (save_epoch + opt.patience) and opt.patience != 0:
             print('No Improve from {} to {}, EarlyStopping.'.format(save_epoch + 1, epoch))

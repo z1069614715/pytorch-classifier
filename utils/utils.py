@@ -1,5 +1,5 @@
 from sklearn import utils
-import torch, itertools, os, time, thop, json, cv2, math
+import torch, itertools, os, time, thop, json, cv2, math, platform, yaml
 import torch.nn as nn
 import torchvision.transforms as transforms
 import numpy as np
@@ -20,6 +20,7 @@ from pytorch_grad_cam.utils.image import show_cam_on_image
 from collections import OrderedDict
 from .utils_aug import rand_bbox
 from pycm import ConfusionMatrix
+from collections import namedtuple
 
 cnames = {
 'aliceblue':   '#F0F8FF',
@@ -315,8 +316,9 @@ def show_config(opt):
             else:
                 opt[keys] = opt[keys].replace('\n', '')
 
-        with open(os.path.join(opt['save_path'], 'param.json'), 'w+') as f:
-            f.write(json.dumps(opt, indent=4, separators={':', ','}))
+        with open(os.path.join(opt['save_path'], 'param.yaml'), 'w+') as f:
+            # f.write(json.dumps(opt, indent=4, separators={':', ','}))
+            yaml.dump(opt, f)
 
 def plot_confusion_matrix(cm, classes, save_path, normalize=True, title='Confusion matrix', cmap=plt.cm.Blues, name='test'):
     plt.figure(figsize=(min(len(classes), 30), min(len(classes), 30)))
@@ -636,20 +638,26 @@ def visual_tsne(feature, y_true, path, labels, save_path):
 def predict_single_image(path, model, test_transform, DEVICE, half=False):
     pil_img = Image.open(path)
     tensor_img = test_transform(pil_img).unsqueeze(0).to(DEVICE)
-    tensor_img = (tensor_img.half() if half else tensor_img)
+    tensor_img = (tensor_img.half() if (half and torch.cuda.is_available()) else tensor_img)
     if len(tensor_img.shape) == 5:
         tensor_img = tensor_img.reshape((tensor_img.size(0) * tensor_img.size(1), tensor_img.size(2), tensor_img.size(3), tensor_img.size(4)))
-        pred_result = torch.softmax(model(tensor_img).mean(0), 0)
+        output = model(tensor_img).mean(0)
     else:
-        pred_result = torch.softmax(model(tensor_img)[0], 0)
+        output = model(tensor_img)[0]
+
+    try:
+        pred_result = torch.softmax(output, 0)
+    except:
+        pred_result = torch.softmax(torch.from_numpy(output), 0) # using torch.softmax will faster than numpy
     return int(pred_result.argmax()), pred_result
 
 class cam_visual:
     def __init__(self, model, test_transform, DEVICE, target_layers, opt):
         self.test_transform = test_transform
         self.DEVICE = DEVICE
+        self.opt = opt
 
-        self.cam_model = eval(opt.cam_type)(model=deepcopy(model).float(), target_layers=[target_layers], use_cuda=torch.cuda.is_available())
+        self.cam_model = eval(opt.cam_type)(model=deepcopy(model), target_layers=[target_layers], use_cuda=torch.cuda.is_available())
     
     def __call__(self, path, label):
         pil_img = Image.open(path)
@@ -750,3 +758,116 @@ class ModelEMA:
                 v *= d
                 v += (1 - d) * msd[k].detach()
         # assert v.dtype == msd[k].dtype == torch.float32, f'{k}: EMA {v.dtype} and model {msd[k].dtype} must be FP32'
+
+class Model_Inference:
+    def __init__(self, device, opt):
+        self.opt = opt
+        self.device = device
+
+        if self.opt.model_type == 'torch':
+            ckpt = torch.load(os.path.join(opt.save_path, 'best.pt'))
+            self.model = (ckpt['model'] if opt.half else ckpt['model'].float())
+            self.model.to(self.device)
+            self.model.eval()
+        elif self.opt.model_type == 'onnx':
+            import onnx, onnxruntime
+            providers = ['CUDAExecutionProvider'] if torch.cuda.is_available() else ['CPUExecutionProvider']
+            self.model = onnxruntime.InferenceSession(os.path.join(opt.save_path, 'best.onnx'), providers=providers)
+        elif self.opt.model_type == 'torchscript':
+            self.model = torch.jit.load(os.path.join(opt.save_path, 'best.ts'))
+            self.model = (self.model.half() if opt.half else self.model)
+            self.model.to(self.device)
+            self.model.eval()
+        elif self.opt.model_type == 'tensorrt':
+            import tensorrt as trt
+            if device.type == 'cpu':
+                raise RuntimeError('Tensorrt not support CPU Inference.')
+            Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
+            logger = trt.Logger()
+            with open(os.path.join(opt.save_path, 'best.engine'), 'rb') as f, trt.Runtime(logger) as runtime:
+                model = runtime.deserialize_cuda_engine(f.read())
+            context = model.create_execution_context()
+            bindings = OrderedDict()
+            fp16 = False  # default updated below
+            dynamic = False
+            for index in range(model.num_bindings):
+                name = model.get_binding_name(index)
+                dtype = trt.nptype(model.get_binding_dtype(index))
+                if model.binding_is_input(index):
+                    if -1 in tuple(model.get_binding_shape(index)):  # dynamic
+                        dynamic = True
+                        context.set_binding_shape(index, tuple(model.get_profile_shape(0, index)[2]))
+                    if dtype == np.float16:
+                        fp16 = True
+                shape = tuple(context.get_binding_shape(index))
+                im = torch.from_numpy(np.empty(shape, dtype=dtype)).to(device)
+                bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
+            self.bindings = bindings
+            self.binding_addrs = OrderedDict((n, d.ptr) for n, d in bindings.items())
+            self.batch_size = bindings['images'].shape[0]  # if dynamic, this is instead max batch size
+            self.model = model
+            self.fp16 = fp16
+            self.dynamic = dynamic
+            self.context = context
+    
+    def __call__(self, inputs):
+        if self.opt.model_type == 'torch':
+            return self.model(inputs)
+        elif self.opt.model_type == 'onnx':
+            inputs = inputs.cpu().numpy().astype(np.float16 if '16' in self.model.get_inputs()[0].type else np.float32)
+            return self.model.run([self.model.get_outputs()[0].name], {self.model.get_inputs()[0].name: inputs})[0]
+        elif self.opt.model_type == 'torchscript':
+            return self.model(inputs)
+        elif self.opt.model_type == 'tensorrt':
+            if self.fp16:
+                inputs = inputs.half()
+            if self.dynamic and inputs.shape != self.bindings['images'].shape:
+                i_in, i_out = (self.model.get_binding_index(x) for x in ('images', 'output'))
+                self.context.set_binding_shape(i_in, inputs.shape)  # reshape if dynamic
+                self.bindings['images'] = self.bindings['images']._replace(shape=inputs.shape)
+                self.bindings['output'].data.resize_(tuple(self.context.get_binding_shape(i_out)))
+            s = self.bindings['images'].shape
+            assert inputs.shape == s, f"input size {inputs.shape} {'>' if self.dynamic else 'not equal to'} max model size {s}"
+            self.binding_addrs['images'] = int(inputs.data_ptr())
+            self.context.execute_v2(list(self.binding_addrs.values()))
+            y = self.bindings['output'].data
+            return y
+    
+    def forward_features(self, inputs):
+        try:
+            return self.model.forward_features(inputs)
+        except:
+            raise 'this model is not a torch model.'
+    
+    def cam_layer(self):
+        try:
+            return self.model.cam_layer()
+        except:
+            raise 'this model is not a torch model.'
+
+def select_device(device='', batch_size=0):
+    device = str(device).strip().lower().replace('cuda:', '').replace('none', '')  # to string, 'cuda:0' to '0'
+    cpu = device == 'cpu'
+    if cpu:
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    elif device:
+        os.environ['CUDA_VISIBLE_DEVICES'] = device
+        assert torch.cuda.is_available() and torch.cuda.device_count() >= len(device.replace(',', '')), \
+            f"Invalid CUDA '--device {device}' requested, use '--device cpu' or pass valid CUDA device(s)"
+
+    print_str = f'Image-Classifier Python-{platform.python_version()} Torch-{torch.__version__} '
+    if not cpu and torch.cuda.is_available():
+        devices = device.split(',') if device else '0'
+        n = len(devices)  # device count
+        if n > 1 and batch_size > 0:  # check batch_size is divisible by device_count
+            assert batch_size % n == 0, f'batch-size {batch_size} not multiple of GPU count {n}'
+        space = ' ' * len(print_str)
+        for i, d in enumerate(devices):
+            p = torch.cuda.get_device_properties(i)
+            print_str += f"{'' if i == 0 else space}CUDA:{d} ({p.name}, {p.total_memory / (1 << 20):.0f}MiB)\n"
+        arg = 'cuda:0'
+    else:
+        print_str += 'CPU'
+        arg = 'cpu'
+    print(print_str)
+    return torch.device(arg)

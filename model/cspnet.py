@@ -847,7 +847,7 @@ class CspNet(nn.Module):
         if need_fea:
             features, features_fc = self.forward_features(x, need_fea=need_fea)
             x = self.forward_head(features_fc)
-            return  features, features_fc, x
+            return features, features_fc, x
         else:
             x = self.forward_features(x)
             x = self.forward_head(x)

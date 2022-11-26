@@ -7,7 +7,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 import matplotlib.pyplot as plt
 import numpy as np
 from utils import utils_aug
-from utils.utils import predict_single_image, cam_visual, dict_to_PrettyTable
+from utils.utils import predict_single_image, cam_visual, dict_to_PrettyTable, select_device
 
 def set_seed(seed):
     random.seed(seed)
@@ -24,13 +24,17 @@ def parse_opt():
     parser.add_argument('--cam_visual', action="store_true", help='visual cam')
     parser.add_argument('--cam_type', type=str, choices=['GradCAM', 'HiResCAM', 'ScoreCAM', 'GradCAMPlusPlus', 'AblationCAM', 'XGradCAM', 'EigenCAM', 'FullGrad'], default='FullGrad', help='cam type')
     parser.add_argument('--half', action="store_true", help='use FP16 half-precision inference')
+    parser.add_argument('--device', type=str, default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
 
     opt = parser.parse_known_args()[0]
-
     if not os.path.exists(os.path.join(opt.save_path, 'best.pt')):
         raise Exception('best.pt not found. please check your --save_path folder')
     ckpt = torch.load(os.path.join(opt.save_path, 'best.pt'))
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    DEVICE = select_device(opt.device)
+    if opt.half and DEVICE.type == 'cpu':
+        raise Exception('half inference only supported GPU.')
+    if opt.half and opt.cam_visual:
+        raise Exception('cam visual only supported FP32.')
     model = (ckpt['model'] if opt.half else ckpt['model'].float())
     model.to(DEVICE)
     model.eval()
