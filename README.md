@@ -315,10 +315,10 @@ image classifier implement in pytoch.
     default: False  
     导出tensorrt时是否显示日志.
   - **export**  
-    type: string, default: torchscript  choices: ['onnx', 'torchscript', 'tensorrt']
+    type: string, default: torchscript  choices: ['onnx', 'torchscript', 'tensorrt']  
     选择导出模型.
   - **device**  
-    type: string, default: torchscript  
+    type: string, default: ''  
     使用的设备.(cuda device, i.e. 0 or 0,1,2,3 or cpu)  
 
 <p id="ModelZoo"></p>
