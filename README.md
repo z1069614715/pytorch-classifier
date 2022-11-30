@@ -43,7 +43,7 @@ image classifier implement in pytoch.
 - **丰富的学习率调整策略**  
   本程序支持学习率预热,支持预热后的自定义学习率策略.[详细看Some explanation第五点](#1)
 
-- **支持导出各种常用推理框架模型**
+- **支持导出各种常用推理框架模型**  
   目前支持导出torchscript,onnx,tensorrt推理模型.
 
 <a id="6"></a>
