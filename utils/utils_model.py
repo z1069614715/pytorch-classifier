@@ -109,6 +109,12 @@ def select_model(name, num_classes, input_shape, channels, pretrained=False):
             nn.Dropout(0.2),
             nn.Linear(in_features=model.classifier.in_features, out_features=num_classes)
         )
+    elif name.startswith('repghostnet'):
+        model = eval('models.{}(pretrained={})'.format(name, pretrained))
+        model.classifier = nn.Sequential(
+            nn.Dropout(0.2),
+            nn.Linear(in_features=model.classifier.in_features, out_features=num_classes)
+        )
     else:
         raise 'Unsupported Model Name.'
 

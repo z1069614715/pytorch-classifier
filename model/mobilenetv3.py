@@ -7,7 +7,7 @@ from typing import Any, Callable, List, Optional, Sequence
 from torchvision.ops.misc import Conv2dNormActivation, SqueezeExcitation as SElayer
 from torchvision._internally_replaced_utils import load_state_dict_from_url
 from torchvision.models._utils import _make_divisible
-from utils.utils import load_weights_from_state_dict
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
 __all__ = ["mobilenetv3_large", "mobilenetv3_small"]
 
@@ -90,6 +90,16 @@ class InvertedResidual(nn.Module):
             result += input
         return result
 
+    def switch_to_deploy(self):
+        new_layers = []
+        for i in range(len(self.block)):
+            if type(self.block[i]) is Conv2dNormActivation:
+                new_layers.append(fuse_conv_bn(self.block[i][0], self.block[i][1]))
+                if len(self.block[i]) == 3:
+                    new_layers.append(self.block[i][2])
+            else:
+                new_layers.append(self.block[i])
+        self.block = nn.Sequential(*new_layers)
 
 class MobileNetV3(nn.Module):
 
@@ -163,6 +173,17 @@ class MobileNetV3(nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.zeros_(m.bias)
+
+    def switch_to_deploy(self):
+        new_layers = []
+        for i in range(len(self.features)):
+            if type(self.features[i]) is Conv2dNormActivation:
+                new_layers.append(fuse_conv_bn(self.features[i][0], self.features[i][1]))
+                if len(self.features[i]) == 3:
+                    new_layers.append(self.features[i][2])
+            else:
+                new_layers.append(self.features[i])
+        self.features = nn.Sequential(*new_layers)
 
     def _forward_impl(self, x: Tensor, need_fea=False) -> Tensor:
         if need_fea:

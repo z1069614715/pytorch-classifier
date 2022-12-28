@@ -7,7 +7,7 @@ import torch.nn as nn
 from timm.models.helpers import named_apply
 from timm.models.layers import ConvNormAct, ConvNormActAa, DropPath, get_attn, create_act_layer, make_divisible
 from timm.models.registry import register_model
-from utils.utils import load_weights_from_state_dict
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
 urls_dict = {
     'cspresnet50': 'https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-weights/cspresnet50_ra-d3e8d487.pth',
@@ -343,6 +343,18 @@ class BottleneckBlock(nn.Module):
         x = self.act3(x)
         return x
 
+    def switch_to_deploy(self):
+        self.conv1 = nn.Sequential(
+            fuse_conv_bn(self.conv1.conv, self.conv1.bn),
+            self.conv1.bn.act,
+        )
+        self.conv2 = nn.Sequential(
+            fuse_conv_bn(self.conv2.conv, self.conv2.bn),
+            self.conv2.bn.act,
+        )
+        self.conv3 = nn.Sequential(
+            fuse_conv_bn(self.conv3.conv, self.conv3.bn),
+        )
 
 class DarkBlock(nn.Module):
     """ DarkNet Block
@@ -383,6 +395,15 @@ class DarkBlock(nn.Module):
         x = self.drop_path(x) + shortcut
         return x
 
+    def switch_to_deploy(self):
+        self.conv1 = nn.Sequential(
+            fuse_conv_bn(self.conv1.conv, self.conv1.bn),
+            self.conv1.bn.act,
+        )
+        self.conv2 = nn.Sequential(
+            fuse_conv_bn(self.conv2.conv, self.conv2.bn),
+            self.conv2.bn.act,
+        )
 
 class EdgeBlock(nn.Module):
     """ EdgeResidual / Fused-MBConv / MobileNetV1-like 3x3 + 1x1 block (w/ activated output)
@@ -422,6 +443,16 @@ class EdgeBlock(nn.Module):
         x = self.conv2(x)
         x = self.drop_path(x) + shortcut
         return x
+    
+    def switch_to_deploy(self):
+        self.conv1 = nn.Sequential(
+            fuse_conv_bn(self.conv1.conv, self.conv1.bn),
+            self.conv1.bn.act,
+        )
+        self.conv2 = nn.Sequential(
+            fuse_conv_bn(self.conv2.conv, self.conv2.bn),
+            self.conv2.bn.act,
+        )
 
 
 class CrossStage(nn.Module):
@@ -500,6 +531,34 @@ class CrossStage(nn.Module):
         out = self.conv_transition(torch.cat([xs, xb], dim=1))
         return out
 
+    def switch_to_deploy(self):
+        if type(self.conv_down) is nn.Sequential:
+            self.conv_down = nn.Sequential(
+                self.conv_down[0],
+                fuse_conv_bn(self.conv_down[1].conv, self.conv_down[1].bn),
+                self.conv_down[1].bn.act,
+                self.conv_down[1].aa
+            )
+        elif type(self.conv_down) is nn.Identity:
+            pass
+        else:
+            self.conv_down = nn.Sequential(
+                fuse_conv_bn(self.conv_down.conv, self.conv_down.bn),
+                self.conv_down.bn.act,
+                self.conv_down.aa
+            )
+        self.conv_exp = nn.Sequential(
+            fuse_conv_bn(self.conv_exp.conv, self.conv_exp.bn),
+            self.conv_exp.bn.act,
+        )
+        self.conv_transition_b = nn.Sequential(
+            fuse_conv_bn(self.conv_transition_b.conv, self.conv_transition_b.bn),
+            self.conv_transition_b.bn.act,
+        )
+        self.conv_transition = nn.Sequential(
+            fuse_conv_bn(self.conv_transition.conv, self.conv_transition.bn),
+            self.conv_transition.bn.act,
+        )
 
 class CrossStage3(nn.Module):
     """Cross Stage 3.
@@ -575,6 +634,29 @@ class CrossStage3(nn.Module):
         out = self.conv_transition(torch.cat([x1, x2], dim=1))
         return out
 
+    def switch_to_deploy(self):
+        if self.conv_down is not None:
+            if type(self.conv_down) is nn.Sequential:
+                self.conv_down = nn.Sequential(
+                    self.conv_down[0],
+                    fuse_conv_bn(self.conv_down[1].conv, self.conv_down[1].bn),
+                    self.conv_down[1].bn.act,
+                    self.conv_down[1].aa
+                )
+            else:
+                self.conv_down = nn.Sequential(
+                    fuse_conv_bn(self.conv_down.conv, self.conv_down.bn),
+                    self.conv_down.bn.act,
+                    self.conv_down.aa
+                )
+        self.conv_exp = nn.Sequential(
+            fuse_conv_bn(self.conv_exp.conv, self.conv_exp.bn),
+            self.conv_exp.bn.act,
+        )
+        self.conv_transition = nn.Sequential(
+            fuse_conv_bn(self.conv_transition.conv, self.conv_transition.bn),
+            self.conv_transition.bn.act,
+        )
 
 class DarkStage(nn.Module):
     """DarkNet stage."""
@@ -630,6 +712,20 @@ class DarkStage(nn.Module):
         x = self.blocks(x)
         return x
 
+    def switch_to_deploy(self):
+        if type(self.conv_down) is nn.Sequential:
+            self.conv_down = nn.Sequential(
+                self.conv_down[0],
+                fuse_conv_bn(self.conv_down[1].conv, self.conv_down[1].bn),
+                self.conv_down[1].bn.act,
+                self.conv_down[1].aa
+            )
+        else:
+            self.conv_down = nn.Sequential(
+                fuse_conv_bn(self.conv_down.conv, self.conv_down.bn),
+                self.conv_down.bn.act,
+                self.conv_down.aa
+            )
 
 def create_csp_stem(
         in_chans=3,
@@ -834,11 +930,11 @@ class CspNet(nn.Module):
                 x = layer(x)
                 features.append(x)
             x = self.avgpool(x)
-            return features, torch.flatten(x)
+            return features, torch.flatten(x, start_dim=1, end_dim=3)
         else:
             x = self.stages(x)
             x = self.avgpool(x)
-            return torch.flatten(x)
+            return torch.flatten(x, start_dim=1, end_dim=3)
 
     def forward_head(self, x):
         return self.head(x)
@@ -992,8 +1088,9 @@ def cs3se_edgenet_x(pretrained=False, **kwargs):
     return _create_cspnet('cs3se_edgenet_x', pretrained=pretrained, **kwargs)
 
 if __name__ == '__main__':
-    inputs = torch.rand((1, 3, 224, 224))
-    model = cs3se_edgenet_x(pretrained=False)
+    inputs = torch.rand((2, 3, 224, 224))
+    model = cspresnet50(pretrained=False)
+    model.head = nn.Linear(model.head.in_features, 1)
     model.eval()
     out = model(inputs)
     print('out shape:{}'.format(out.size()))

@@ -1,0 +1,19 @@
+python main.py --model_name efficientnet_v2_l --config config/config.py --batch_size 32 --Augment AutoAugment --save_path runs/efficientnet_v2_l --device 0 \
+    --pretrained --amp --warmup --ema --imagenet_meanstd
+
+python main.py --model_name resnext50 --config config/config.py --batch_size 128 --Augment AutoAugment --save_path runs/resnext50 --device 1 \
+    --pretrained --amp --warmup --ema --imagenet_meanstd
+
+python metrice.py --task fps --save_path runs/efficientnet_v2_l --batch_size 1 --device 0
+python metrice.py --task fps --save_path runs/efficientnet_v2_l --batch_size 1 --device 0 --half
+
+python metrice.py --task fps --save_path runs/resnext50 --batch_size 32 --device 0
+python metrice.py --task fps --save_path runs/resnext50 --batch_size 32 --device 0 --half
+
+python export.py --save_path runs/efficientnet_v2_l --export onnx --simplify --batch_size 1
+python metrice.py --task fps --save_path runs/efficientnet_v2_l --batch_size 1 --device 0 --model_type onnx
+
+python export.py --save_path runs/resnext50 --export onnx --simplify --batch_size 1
+python metrice.py --task fps --save_path runs/resnext50 --batch_size 1 --device 0 --model_type onnx
+
+python predict.py --source dataset/test/0000 --save_path runs/resnext50 --half --device 0

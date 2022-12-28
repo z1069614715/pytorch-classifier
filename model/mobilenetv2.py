@@ -7,7 +7,7 @@ from torchvision.ops.misc import ConvNormActivation
 from torchvision._internally_replaced_utils import load_state_dict_from_url
 from torchvision.models._utils import _make_divisible
 from typing import Callable, Any, Optional, List
-from utils.utils import load_weights_from_state_dict
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
 __all__ = ['mobilenet_v2']
 
@@ -75,7 +75,22 @@ class InvertedResidual(nn.Module):
             return x + self.conv(x)
         else:
             return self.conv(x)
-
+    
+    def switch_to_deploy(self):
+        if len(self.conv) == 4:
+            self.conv = nn.Sequential(
+                fuse_conv_bn(self.conv[0][0], self.conv[0][1]),
+                self.conv[0][2],
+                fuse_conv_bn(self.conv[1][0], self.conv[1][1]),
+                self.conv[1][2],
+                fuse_conv_bn(self.conv[2], self.conv[3]),
+            )
+        else:
+            self.conv = nn.Sequential(
+                fuse_conv_bn(self.conv[0][0], self.conv[0][1]),
+                self.conv[0][2],
+                fuse_conv_bn(self.conv[1], self.conv[2]),
+            )
 
 class MobileNetV2(nn.Module):
     def __init__(
@@ -199,6 +214,16 @@ class MobileNetV2(nn.Module):
     
     def cam_layer(self):
         return self.features[-1]
+    
+    def switch_to_deploy(self):
+        self.features[0] = nn.Sequential(
+            fuse_conv_bn(self.features[0][0], self.features[0][1]),
+            self.features[0][2]
+        )
+        self.features[-1] = nn.Sequential(
+            fuse_conv_bn(self.features[-1][0], self.features[-1][1]),
+            self.features[-1][2]
+        )
 
 
 def mobilenet_v2(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> MobileNetV2:

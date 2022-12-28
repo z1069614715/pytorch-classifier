@@ -14,3 +14,4 @@ from .repvgg import *
 from .sequencer import *
 from .cspnet import *
 from .dpn import *
+from .repghost import *

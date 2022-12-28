@@ -3,7 +3,7 @@ import numpy as np
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 import torch
 import torch.nn as nn
-from utils.utils import select_device
+from utils.utils import select_device, model_fuse
 
 def export_torchscript(opt, model, img, prefix='TorchScript'):
     print('Starting TorchScript export with pytorch %s...' % torch.__version__)
@@ -104,6 +104,7 @@ def parse_opt():
         assert not opt.dynamic, '--half not compatible with --dynamic'
     ckpt = torch.load(os.path.join(opt.save_path, 'best.pt'))
     model = ckpt['model'].float().to(DEVICE)
+    model_fuse(model)
     img = torch.rand((opt.batch_size, opt.image_channel, opt.image_size, opt.image_size)).to(DEVICE)
 
     return opt, (model.half() if opt.half else model), (img.half() if opt.half else img), DEVICE

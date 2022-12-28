@@ -4,7 +4,7 @@ from torch.nn import Conv2d, Module, ReLU
 from torch.nn.modules.utils import _pair
 import torch.nn.functional as F
 import numpy as np
-from utils.utils import load_weights_from_state_dict
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
 __all__ = ['resnest50', 'resnest101', 'resnest200', 'resnest269']
 _url_format = 'https://github.com/zhanghang1989/ResNeSt/releases/download/weights_step1/{}-{}.pth'
@@ -73,7 +73,7 @@ class SplAtConv2d(Module):
 
     def forward(self, x):
         x = self.conv(x)
-        if self.use_bn:
+        if self.use_bn and hasattr(self, 'bn0'):
             x = self.bn0(x)
         if self.dropblock_prob > 0.0:
             x = self.dropblock(x)
@@ -107,6 +107,14 @@ class SplAtConv2d(Module):
         else:
             out = atten * x
         return out.contiguous()
+
+    def switch_to_deploy(self):
+        if self.use_bn:
+            try:
+                self.conv = fuse_conv_bn(self.conv, self.bn0)
+                del self.bn0
+            except:
+                pass
 
 class Bottleneck(nn.Module):
     """ResNet Bottleneck
@@ -177,7 +185,8 @@ class Bottleneck(nn.Module):
         residual = x
 
         out = self.conv1(x)
-        out = self.bn1(out)
+        if hasattr(self, 'bn1'):
+            out = self.bn1(out)
         if self.dropblock_prob > 0.0:
             out = self.dropblock1(out)
         out = self.relu(out)
@@ -187,7 +196,8 @@ class Bottleneck(nn.Module):
 
         out = self.conv2(out)
         if self.radix == 0:
-            out = self.bn2(out)
+            if hasattr(self, 'bn2'):
+                out = self.bn2(out)
             if self.dropblock_prob > 0.0:
                 out = self.dropblock2(out)
             out = self.relu(out)
@@ -196,7 +206,8 @@ class Bottleneck(nn.Module):
             out = self.avd_layer(out)
 
         out = self.conv3(out)
-        out = self.bn3(out)
+        if hasattr(self, 'bn3'):
+            out = self.bn3(out)
         if self.dropblock_prob > 0.0:
             out = self.dropblock3(out)
 
@@ -207,6 +218,15 @@ class Bottleneck(nn.Module):
         out = self.relu(out)
 
         return out
+    
+    def switch_to_deploy(self):
+        self.conv1 = fuse_conv_bn(self.conv1, self.bn1)
+        del self.bn1
+        if self.radix == 0:
+            self.conv2 = fuse_conv_bn(self.conv2, self.bn2)
+            del self.bn2
+        self.conv3 = fuse_conv_bn(self.conv3, self.bn3)
+        del self.bn3
 
 class ResNet(nn.Module):
     """ResNet Variants
@@ -383,7 +403,8 @@ class ResNet(nn.Module):
     def forward_features(self, x, need_fea=False):
         if need_fea:
             x = self.conv1(x)
-            x = self.bn1(x)
+            if hasattr(self, 'bn1'):
+                x = self.bn1(x)
             x = self.relu(x)
             x = self.maxpool(x)
 
@@ -397,7 +418,8 @@ class ResNet(nn.Module):
             return [x1, x2, x3, x4], x
         else:
             x = self.conv1(x)
-            x = self.bn1(x)
+            if hasattr(self, 'bn1'):
+                x = self.bn1(x)
             x = self.relu(x)
             x = self.maxpool(x)
 
@@ -412,6 +434,19 @@ class ResNet(nn.Module):
     
     def cam_layer(self):
         return self.layer4
+
+    def switch_to_deploy(self):
+        if type(self.conv1) is nn.Conv2d:
+            self.conv1 = fuse_conv_bn(self.conv1, self.bn1)
+        else:
+            self.conv1 = nn.Sequential(
+                fuse_conv_bn(self.conv1[0], self.conv1[1]),
+                self.conv1[2],
+                fuse_conv_bn(self.conv1[3], self.conv1[4]),
+                self.conv1[5],
+                fuse_conv_bn(self.conv1[6], self.bn1),
+            )
+        del self.bn1
 
 def short_hash(name):
     if name not in _model_sha256:

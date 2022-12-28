@@ -639,11 +639,12 @@ def predict_single_image(path, model, test_transform, DEVICE, half=False):
     pil_img = Image.open(path)
     tensor_img = test_transform(pil_img).unsqueeze(0).to(DEVICE)
     tensor_img = (tensor_img.half() if (half and torch.cuda.is_available()) else tensor_img)
-    if len(tensor_img.shape) == 5:
-        tensor_img = tensor_img.reshape((tensor_img.size(0) * tensor_img.size(1), tensor_img.size(2), tensor_img.size(3), tensor_img.size(4)))
-        output = model(tensor_img).mean(0)
-    else:
-        output = model(tensor_img)[0]
+    with torch.inference_mode():
+        if len(tensor_img.shape) == 5:
+            tensor_img = tensor_img.reshape((tensor_img.size(0) * tensor_img.size(1), tensor_img.size(2), tensor_img.size(3), tensor_img.size(4)))
+            output = model(tensor_img).mean(0)
+        else:
+            output = model(tensor_img)[0]
 
     try:
         pred_result = torch.softmax(output, 0)
@@ -766,7 +767,9 @@ class Model_Inference:
 
         if self.opt.model_type == 'torch':
             ckpt = torch.load(os.path.join(opt.save_path, 'best.pt'))
-            self.model = (ckpt['model'] if opt.half else ckpt['model'].float())
+            self.model = ckpt['model'].float()
+            model_fuse(self.model)
+            self.model = (self.model.half() if opt.half else self.model)
             self.model.to(self.device)
             self.model.eval()
         elif self.opt.model_type == 'onnx':
@@ -812,7 +815,8 @@ class Model_Inference:
     
     def __call__(self, inputs):
         if self.opt.model_type == 'torch':
-            return self.model(inputs)
+            with torch.inference_mode():
+                return self.model(inputs)
         elif self.opt.model_type == 'onnx':
             inputs = inputs.cpu().numpy().astype(np.float16 if '16' in self.model.get_inputs()[0].type else np.float32)
             return self.model.run([self.model.get_outputs()[0].name], {self.model.get_inputs()[0].name: inputs})[0]
@@ -871,3 +875,76 @@ def select_device(device='', batch_size=0):
         arg = 'cpu'
     print(print_str)
     return torch.device(arg)
+
+def fuse_conv_bn(conv, bn):
+    # Fuse convolution and batchnorm layers https://tehnokv.com/posts/fusing-batchnorm-and-conv/
+    fusedconv = (
+        nn.Conv2d(
+            conv.in_channels,
+            conv.out_channels,
+            kernel_size=conv.kernel_size,
+            stride=conv.stride,
+            padding=conv.padding,
+            groups=conv.groups,
+            bias=True,
+        )
+        .requires_grad_(False)
+        .to(conv.weight.device)
+    )
+
+    # prepare filters
+    w_conv = conv.weight.clone().view(conv.out_channels, -1)
+    w_bn = torch.diag(bn.weight.div(torch.sqrt(bn.eps + bn.running_var)))
+    fusedconv.weight.copy_(torch.mm(w_bn, w_conv).view(fusedconv.weight.shape))
+
+    # prepare spatial bias
+    b_conv = (
+        torch.zeros(conv.weight.size(0), device=conv.weight.device)
+        if conv.bias is None
+        else conv.bias
+    )
+    b_bn = bn.bias - bn.weight.mul(bn.running_mean).div(
+        torch.sqrt(bn.running_var + bn.eps)
+    )
+    fusedconv.bias.copy_(torch.mm(w_bn, b_conv.reshape(-1, 1)).reshape(-1) + b_bn)
+    return fusedconv
+
+def model_fuse(model):
+    before_fuse_layers = len(getLayers(model))
+    for module in model.modules():
+        if hasattr(module, 'switch_to_deploy'):
+            module.switch_to_deploy()
+    print(f'model fuse... {before_fuse_layers} layers to {len(getLayers(model))} layers')
+
+def getLayers(model):
+    """
+    get each layer's name and its module
+    :param model:
+    :return: each layer's name and its module
+    """
+    layers = []
+ 
+    def unfoldLayer(model):
+        """
+        unfold each layer
+        :param model: the given model or a single layer
+        :param root: root name
+        :return:
+        """
+ 
+        # get all layers of the model
+        layer_list = list(model.named_children())
+        for item in layer_list:
+            module = item[1]
+            sublayer = list(module.named_children())
+            sublayer_num = len(sublayer)
+ 
+            # if current layer contains sublayers, add current layer name on its sublayers
+            if sublayer_num == 0:
+                layers.append(module)
+            # if current layer contains sublayers, unfold them
+            elif isinstance(module, torch.nn.Module):
+                unfoldLayer(module)
+ 
+    unfoldLayer(model)
+    return layers

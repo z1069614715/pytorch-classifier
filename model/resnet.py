@@ -4,7 +4,7 @@ import torch.nn as nn
 import numpy as np
 from torchvision._internally_replaced_utils import load_state_dict_from_url
 from typing import Type, Any, Callable, Union, List, Optional
-
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
 __all__ = ['resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152', 'resnext50_32x4d', 'resnext101_32x8d',
@@ -69,11 +69,13 @@ class BasicBlock(nn.Module):
         identity = x
 
         out = self.conv1(x)
-        out = self.bn1(out)
+        if hasattr(self, 'bn1'):
+            out = self.bn1(out)
         out = self.relu(out)
 
         out = self.conv2(out)
-        out = self.bn2(out)
+        if hasattr(self, 'bn2'):
+            out = self.bn2(out)
 
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -83,6 +85,11 @@ class BasicBlock(nn.Module):
 
         return out
 
+    def switch_to_deploy(self):
+        self.conv1 = fuse_conv_bn(self.conv1, self.bn1)
+        del self.bn1
+        self.conv2 = fuse_conv_bn(self.conv2, self.bn2)
+        del self.bn2
 
 class Bottleneck(nn.Module):
     # Bottleneck in torchvision places the stride for downsampling at 3x3 convolution(self.conv2)
@@ -123,15 +130,18 @@ class Bottleneck(nn.Module):
         identity = x
 
         out = self.conv1(x)
-        out = self.bn1(out)
+        if hasattr(self, 'bn1'):
+            out = self.bn1(out)
         out = self.relu(out)
 
         out = self.conv2(out)
-        out = self.bn2(out)
+        if hasattr(self, 'bn2'):
+            out = self.bn2(out)
         out = self.relu(out)
 
         out = self.conv3(out)
-        out = self.bn3(out)
+        if hasattr(self, 'bn3'):
+            out = self.bn3(out)
 
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -141,6 +151,13 @@ class Bottleneck(nn.Module):
 
         return out
 
+    def switch_to_deploy(self):
+        self.conv1 = fuse_conv_bn(self.conv1, self.bn1)
+        del self.bn1
+        self.conv2 = fuse_conv_bn(self.conv2, self.bn2)
+        del self.bn2
+        self.conv3 = fuse_conv_bn(self.conv3, self.bn3)
+        del self.bn3
 
 class ResNet(nn.Module):
 
@@ -203,6 +220,10 @@ class ResNet(nn.Module):
                 elif isinstance(m, BasicBlock):
                     nn.init.constant_(m.bn2.weight, 0)  # type: ignore[arg-type]
 
+    def switch_to_deploy(self):
+        self.conv1 = fuse_conv_bn(self.conv1, self.bn1)
+        del self.bn1
+
     def _make_layer(self, block: Type[Union[BasicBlock, Bottleneck]], planes: int, blocks: int,
                     stride: int = 1, dilate: bool = False) -> nn.Sequential:
         norm_layer = self._norm_layer
@@ -244,7 +265,8 @@ class ResNet(nn.Module):
     
     def forward_features(self, x, need_fea=False):
         x = self.conv1(x)
-        x = self.bn1(x)
+        if hasattr(self, 'bn1'):
+            x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
         if need_fea:
@@ -281,15 +303,7 @@ def _resnet(
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)
-        model_dict = model.state_dict()
-        weight_dict = {}
-        for k, v in state_dict.items():
-            if k in model_dict:
-                if np.shape(model_dict[k]) == np.shape(v):
-                    weight_dict[k] = v
-        pretrained_dict = weight_dict
-        model_dict.update(pretrained_dict)
-        model.load_state_dict(model_dict)
+        load_weights_from_state_dict(model, state_dict)
     return model
 
 

@@ -51,7 +51,6 @@ class BnActConv2d(nn.Module):
     def forward(self, x):
         return self.conv(self.bn(x))
 
-
 class DualPathBlock(nn.Module):
     def __init__(
             self, in_chs, num_1x1_a, num_3x3_b, num_1x1_c, inc, groups, block_type='normal', b=False):

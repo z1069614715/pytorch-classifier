@@ -6,7 +6,7 @@ import os, torch, argparse, time, torchvision, tqdm
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 import numpy as np
 from utils import utils_aug
-from utils.utils import classification_metrice, Metrice_Dataset, visual_predictions, visual_tsne, dict_to_PrettyTable, Model_Inference, select_device
+from utils.utils import classification_metrice, Metrice_Dataset, visual_predictions, visual_tsne, dict_to_PrettyTable, Model_Inference, select_device, model_fuse
 
 torch.backends.cudnn.deterministic = True
 def set_seed(seed):
@@ -56,7 +56,8 @@ def parse_opt():
         fps_arr = []
         for i in tqdm.tqdm(range(test_time + warm_up)):
             since = time.time()
-            model(inputs)
+            with torch.inference_mode():
+                model(inputs)
             if i > warm_up:
                 fps_arr.append(time.time() - since)
         fps = np.mean(fps_arr)
@@ -85,7 +86,7 @@ def parse_opt():
 if __name__ == '__main__':
     opt, model, test_dataset, DEVICE, CLASS_NUM, label, save_path = parse_opt()
     y_true, y_pred, y_score, y_feature, img_path = [], [], [], [], []
-    with torch.no_grad():
+    with torch.inference_mode():
         for x, y, path in tqdm.tqdm(test_dataset, desc='Test Stage'):
             x = (x.half().to(DEVICE) if opt.half else x.to(DEVICE))
             if opt.test_tta:

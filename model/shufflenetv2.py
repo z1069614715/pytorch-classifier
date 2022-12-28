@@ -4,11 +4,10 @@ from torch import Tensor
 import torch.nn as nn
 from torchvision._internally_replaced_utils import load_state_dict_from_url
 from typing import Callable, Any, List
-from utils.utils import load_weights_from_state_dict
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
 __all__ = [
-    'shufflenet_v2_x0_5', 'shufflenet_v2_x1_0',
-    'shufflenet_v2_x1_5', 'shufflenet_v2_x2_0'
+    'shufflenet_v2_x0_5', 'shufflenet_v2_x1_0'
 ]
 
 model_urls = {
@@ -96,6 +95,20 @@ class InvertedResidual(nn.Module):
 
         return out
 
+    def switch_to_deploy(self):
+        if len(self.branch1) > 0:
+            self.branch1 = nn.Sequential(
+                fuse_conv_bn(self.branch1[0], self.branch1[1]),
+                fuse_conv_bn(self.branch1[2], self.branch1[3]),
+                self.branch1[4]
+            )
+        self.branch2 = nn.Sequential(
+            fuse_conv_bn(self.branch2[0], self.branch2[1]),
+            self.branch2[2],
+            fuse_conv_bn(self.branch2[3], self.branch2[4]),
+            fuse_conv_bn(self.branch2[5], self.branch2[6]),
+            self.branch2[7]
+        )
 
 class ShuffleNetV2(nn.Module):
     def __init__(
@@ -145,6 +158,16 @@ class ShuffleNetV2(nn.Module):
         )
 
         self.fc = nn.Linear(output_channels, num_classes)
+
+    def switch_to_deploy(self):
+        self.conv1 = nn.Sequential(
+            fuse_conv_bn(self.conv1[0], self.conv1[1]),
+            self.conv1[2]
+        )
+        self.conv5 = nn.Sequential(
+            fuse_conv_bn(self.conv5[0], self.conv5[1]),
+            self.conv5[2]
+        )
 
     def _forward_impl(self, x: Tensor, need_fea=False) -> Tensor:
         if need_fea:

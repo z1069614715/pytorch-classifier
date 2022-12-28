@@ -4,14 +4,14 @@ import torch.nn.functional as F
 import numpy as np
 from torch.hub import load_state_dict_from_url
 from collections import OrderedDict
-from utils.utils import load_weights_from_state_dict
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
-__all__ = ['vovnet27_slim', 'vovnet39', 'vovnet57']
+__all__ = ['vovnet39', 'vovnet57']
 
 
 model_urls = {
-    'vovnet39': 'https://dl.dropbox.com/s/1lnzsgnixd8gjra/vovnet39_torchvision.pth?dl=1',
-    'vovnet57': 'https://dl.dropbox.com/s/6bfu9gstbwfw31m/vovnet57_torchvision.pth?dl=1'
+    'vovnet39': 'https://github.com/z1069614715/pretrained-weights/releases/download/vovnet_v1.0/vovnet39_torchvision.pth',
+    'vovnet57': 'https://github.com/z1069614715/pretrained-weights/releases/download/vovnet_v1.0/vovnet57_torchvision.pth'
 }
 
 
@@ -90,6 +90,25 @@ class _OSA_module(nn.Module):
 
         return xt
 
+    def switch_to_deploy(self):
+        new_features = []
+        for i in range(len(self.layers)):
+            if type(self.layers[i]) is nn.Sequential:
+                new_features.append(nn.Sequential(
+                    fuse_conv_bn(self.layers[i][0], self.layers[i][1]),
+                    self.layers[i][2]
+                ))
+            elif type(self.layers[i]) is nn.BatchNorm2d:
+                new_features[-1] = fuse_conv_bn(new_features[-1], self.layers[i])
+                print(1)
+            else:
+                new_features.append(self.layers[i])
+        self.layers = nn.Sequential(*new_features)
+
+        self.concat = nn.Sequential(
+            fuse_conv_bn(self.concat[0], self.concat[1]),
+            self.concat[2]
+        )
 
 class _OSA_stage(nn.Sequential):
     def __init__(self,
@@ -163,6 +182,16 @@ class VoVNet(nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.constant_(m.bias, 0)
 
+    def switch_to_deploy(self):
+        self.stem = nn.Sequential(
+            fuse_conv_bn(self.stem[0], self.stem[1]),
+            self.stem[2],
+            fuse_conv_bn(self.stem[3], self.stem[4]),
+            self.stem[5],
+            fuse_conv_bn(self.stem[6], self.stem[7]),
+            self.stem[8],
+        )
+
     def forward(self, x, need_fea=False):
         if need_fea:
             features, features_fc = self.forward_features(x, need_fea)
@@ -205,6 +234,9 @@ def _vovnet(arch,
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)
+        for keys in list(state_dict.keys()):
+            state_dict[f'{keys.replace("module.", "")}'] = state_dict[keys]
+            del state_dict[keys]
         model = load_weights_from_state_dict(model, state_dict)
     return model
 

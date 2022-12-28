@@ -15,7 +15,7 @@ from torchvision.utils import _log_api_usage_once
 from torchvision.models._api import WeightsEnum, Weights
 from torchvision.models._meta import _IMAGENET_CATEGORIES
 from torchvision.models._utils import handle_legacy_interface, _ovewrite_named_param, _make_divisible
-from utils.utils import load_weights_from_state_dict
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
 __all__ = [
     "efficientnet_b0",
@@ -155,6 +155,17 @@ class MBConv(nn.Module):
             result = self.stochastic_depth(result)
             result += input
         return result
+    
+    def switch_to_deploy(self):
+        new_block = []
+        for layer in self.block:
+            if type(layer) is Conv2dNormActivation:
+                new_block.append(fuse_conv_bn(layer[0], layer[1]))
+                if len(layer) > 2:
+                    new_block.append(layer[2])
+            else:
+                new_block.append(layer)
+        self.block = nn.Sequential(*new_block)
 
 
 class FusedMBConv(nn.Module):
@@ -216,6 +227,17 @@ class FusedMBConv(nn.Module):
             result = self.stochastic_depth(result)
             result += input
         return result
+    
+    def switch_to_deploy(self):
+        new_block = []
+        for layer in self.block:
+            if type(layer) is Conv2dNormActivation:
+                new_block.append(fuse_conv_bn(layer[0], layer[1]))
+                if len(layer) > 2:
+                    new_block.append(layer[2])
+            else:
+                new_block.append(layer)
+        self.block = nn.Sequential(*new_block)
 
 
 class EfficientNet(nn.Module):
@@ -362,6 +384,17 @@ class EfficientNet(nn.Module):
 
     def cam_layer(self):
         return self.features[-1]
+    
+    def switch_to_deploy(self):
+        new_block = []
+        for layer in self.features:
+            if type(layer) is Conv2dNormActivation:
+                new_block.append(fuse_conv_bn(layer[0], layer[1]))
+                if len(layer) > 2:
+                    new_block.append(layer[2])
+            else:
+                new_block.append(layer)
+        self.features = nn.Sequential(*new_block)
 
 def _efficientnet(
     inverted_residual_setting: Sequence[Union[MBConvConfig, FusedMBConvConfig]],

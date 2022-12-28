@@ -3,7 +3,7 @@ import torch.nn as nn
 import math
 import numpy as np
 from torch.hub import load_state_dict_from_url
-from utils.utils import load_weights_from_state_dict
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
 __all__ = ['ghostnet']
 
@@ -72,6 +72,15 @@ class GhostModule(nn.Module):
         out = torch.cat([x1,x2], dim=1)
         return out[:,:self.oup,:,:]
 
+    def switch_to_deploy(self):
+        self.primary_conv = nn.Sequential(
+            fuse_conv_bn(self.primary_conv[0], self.primary_conv[1]),
+            self.primary_conv[2]
+        )
+        self.cheap_operation = nn.Sequential(
+            fuse_conv_bn(self.cheap_operation[0], self.cheap_operation[1]),
+            self.cheap_operation[2]
+        )
 
 class GhostBottleneck(nn.Module):
     def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se):
@@ -101,6 +110,27 @@ class GhostBottleneck(nn.Module):
     def forward(self, x):
         return self.conv(x) + self.shortcut(x)
 
+    def switch_to_deploy(self):
+        if len(self.conv[1]) > 0:
+            self.conv = nn.Sequential(
+                self.conv[0],
+                fuse_conv_bn(self.conv[1][0], self.conv[1][1]),
+                self.conv[1][2],
+                self.conv[2],
+                self.conv[3],
+            )
+        else:
+            self.conv = nn.Sequential(
+                self.conv[0],
+                self.conv[2],
+                self.conv[3],
+            ) 
+        if len(self.shortcut) != 0:
+            self.shortcut = nn.Sequential(
+                fuse_conv_bn(self.shortcut[0][0], self.shortcut[0][1]),
+                self.shortcut[0][2],
+                fuse_conv_bn(self.shortcut[1], self.shortcut[2])
+            )
 
 class GhostNet(nn.Module):
     def __init__(self, cfgs, num_classes=1000, width_mult=1.):
@@ -183,6 +213,17 @@ class GhostNet(nn.Module):
 
     def cam_layer(self):
         return self.features[-1]
+    
+    def switch_to_deploy(self):
+        self.features[0] = nn.Sequential(
+            fuse_conv_bn(self.features[0][0], self.features[0][1]),
+            self.features[0][2]
+        )
+        self.squeeze = nn.Sequential(
+            fuse_conv_bn(self.squeeze[0], self.squeeze[1]),
+            self.squeeze[2],
+            self.squeeze[3]
+        )
 
 def ghostnet(pretrained=False, **kwargs):
     """

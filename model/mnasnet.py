@@ -6,9 +6,9 @@ import torch.nn as nn
 import numpy as np
 from torchvision._internally_replaced_utils import load_state_dict_from_url
 from typing import Any, Dict, List
-from utils.utils import load_weights_from_state_dict
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
-__all__ = ['mnasnet0_5', 'mnasnet0_75', 'mnasnet1_0', 'mnasnet1_3']
+__all__ = ['mnasnet1_0']
 
 _MODEL_URLS = {
     "mnasnet0_5":
@@ -59,6 +59,15 @@ class _InvertedResidual(nn.Module):
             return self.layers(input) + input
         else:
             return self.layers(input)
+    
+    def switch_to_deploy(self):
+        self.layers = nn.Sequential(
+            fuse_conv_bn(self.layers[0], self.layers[1]),
+            self.layers[2],
+            fuse_conv_bn(self.layers[3], self.layers[4]),
+            self.layers[5],
+            fuse_conv_bn(self.layers[6], self.layers[7])
+        )
 
 
 def _stack(in_ch: int, out_ch: int, kernel_size: int, stride: int, exp_factor: int, repeats: int,
@@ -145,6 +154,18 @@ class MNASNet(torch.nn.Module):
         self.classifier = nn.Sequential(nn.Dropout(p=dropout, inplace=True),
                                         nn.Linear(1280, num_classes))
         self._initialize_weights()
+
+    def switch_to_deploy(self):
+        self.layers = nn.Sequential(
+            fuse_conv_bn(self.layers[0], self.layers[1]),
+            self.layers[2],
+            fuse_conv_bn(self.layers[3], self.layers[4]),
+            self.layers[5],
+            fuse_conv_bn(self.layers[6], self.layers[7]),
+            self.layers[8:14],
+            fuse_conv_bn(self.layers[14], self.layers[15]),
+            self.layers[16]
+        )
 
     def forward(self, x: Tensor, need_fea=False) -> Tensor:
         if need_fea:

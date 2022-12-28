@@ -8,7 +8,7 @@ from collections import OrderedDict
 from torchvision._internally_replaced_utils import load_state_dict_from_url
 from torch import Tensor
 from typing import Any, List, Tuple
-
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
 __all__ = ['densenet121', 'densenet169', 'densenet201', 'densenet161']
 
@@ -246,7 +246,10 @@ class DenseNet(nn.Module):
     
     def cam_layer(self):
         return self.features[-1]
-
+    
+    def switch_to_deploy(self):
+        self.features.conv0 = fuse_conv_bn(self.features.conv0, self.features.norm0)
+        del self.features.norm0
 
 def load_state_dict(model: nn.Module, model_url: str, progress: bool) -> None:
     # '.'s are no longer allowed in module names, but previous _DenseLayer
@@ -262,15 +265,16 @@ def load_state_dict(model: nn.Module, model_url: str, progress: bool) -> None:
             new_key = res.group(1) + res.group(2)
             state_dict[new_key] = state_dict[key]
             del state_dict[key]
-    model_dict = model.state_dict()
-    weight_dict = {}
-    for k, v in state_dict.items():
-        if k in model_dict:
-            if np.shape(model_dict[k]) == np.shape(v):
-                weight_dict[k] = v
-    pretrained_dict = weight_dict
-    model_dict.update(pretrained_dict)
-    model.load_state_dict(model_dict)
+    load_weights_from_state_dict(model, state_dict)
+    # model_dict = model.state_dict()
+    # weight_dict = {}
+    # for k, v in state_dict.items():
+    #     if k in model_dict:
+    #         if np.shape(model_dict[k]) == np.shape(v):
+    #             weight_dict[k] = v
+    # pretrained_dict = weight_dict
+    # model_dict.update(pretrained_dict)
+    # model.load_state_dict(model_dict)
 
 def _densenet(
     arch: str,

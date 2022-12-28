@@ -5,7 +5,6 @@ import numpy as np
 
 # set random seed
 np.random.seed(0)
-
 '''
     This file help us to split the dataset.
     It's going to be a training set, a validation set, a test set.

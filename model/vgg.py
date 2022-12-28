@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 from torchvision._internally_replaced_utils import load_state_dict_from_url
 from typing import Union, List, Dict, Any, cast
-from utils.utils import load_weights_from_state_dict
+from utils.utils import load_weights_from_state_dict, fuse_conv_bn
 
 __all__ = [
     'vgg11', 'vgg11_bn', 'vgg13', 'vgg13_bn', 'vgg16', 'vgg16_bn',
@@ -88,6 +88,15 @@ class VGG(nn.Module):
 
     def cam_layer(self):
         return self.features[-1]
+    
+    def switch_to_deploy(self):
+        new_features = []
+        for i in range(len(self.features)):
+            if type(self.features[i]) is nn.BatchNorm2d:
+                new_features[-1] = fuse_conv_bn(new_features[-1], self.features[i])
+            else:
+                new_features.append(self.features[i])
+        self.features = nn.Sequential(*new_features)
 
 def make_layers(cfg: List[Union[str, int]], batch_norm: bool = False) -> nn.Sequential:
     layers: List[nn.Module] = []

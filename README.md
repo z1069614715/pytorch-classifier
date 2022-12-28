@@ -156,7 +156,7 @@ image classifier implement in pytoch.
     type: string, default: acc, choices:['loss', 'acc', 'mean_acc']  
     根据metrice选择的指标来进行保存best.pt.
   - **patience**  
-    type: int, default:30
+    type: int, default:30  
     早停法中的patience.(设置为0即为不使用早停法)
   - **imagenet_meanstd**  
     default:False  
@@ -288,7 +288,7 @@ image classifier implement in pytoch.
     Example: transforms.Compose([transforms.RandomHorizontalFlip(p=0.5),transforms.RandomRotation(degrees=20),])  
     自定义的数据增强.  
 - **export.py**  
-  导出模型的文件.目前支持torchscript,onnx.
+  导出模型的文件.目前支持torchscript,onnx,tensorrt.  
   参数解释:
   - **save_path**  
     type: string, default: runs/exp  
@@ -334,7 +334,7 @@ image classifier implement in pytoch.
   | densenet | densenet121,densenet161,densenet169,densenet201 |
   | vgg | vgg11,vgg11_bn,vgg13,vgg13_bn,vgg16,vgg16_bn,vgg19,vgg19_bn |
   | efficientnet | efficientnet_b0,efficientnet_b1,efficientnet_b2,efficientnet_b3,efficientnet_b4,efficientnet_b5,efficientnet_b6,efficientnet_b7<br>efficientnet_v2_s,efficientnet_v2_m,efficientnet_v2_l |
-  | nasnet | mnasnet0_5,mnasnet1_0 |
+  | nasnet | mnasnet1_0 |
   | vovnet | vovnet39,vovnet59 |
   | convnext | convnext_tiny,convnext_small,convnext_base,convnext_large,convnext_xlarge |
   | ghostnet | ghostnet |
@@ -343,6 +343,7 @@ image classifier implement in pytoch.
   | darknet | darknet53,darknetaa53 |
   | cspnet | cspresnet50,cspresnext50,cspdarknet53,cs3darknet_m,cs3darknet_l,cs3darknet_x,cs3darknet_focus_m,cs3darknet_focus_l<br>cs3sedarknet_l,cs3sedarknet_x,cs3edgenet_x,cs3se_edgenet_x |
   | dpn | dpn68,dpn68b,dpn92,dpn98,dpn107,dpn131 |
+  | repghost | repghostnet_0_5x,repghostnet_0_58x,repghostnet_0_8x,repghostnet_1_0x,repghostnet_1_11x<br>repghostnet_1_3x,repghostnet_1_5x,repghostnet_2_0x |
 
 <a id="Someexplanation"></a>
 
@@ -610,7 +611,7 @@ image classifier implement in pytoch.
 - [ ] Accumulation Gradient  
 - [ ] Model Ensembling  
 - [ ] Freeze Training  
-- [ ] Support Fuse Conv and Bn  
+- [x] Support Fuse Conv and Bn  
 - [x] Early Stop  
 
 <a id="Reference"></a>
