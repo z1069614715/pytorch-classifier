@@ -25,7 +25,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default=r'dataset/train', help='all data path')
     parser.add_argument('--label_path', type=str, default=r'dataset/label.txt', help='label txt save path')
-    parser.add_argument('--val_size', type=float, default=0.2, help='size of val set')
+    parser.add_argument('--val_size', type=float, default=0.1, help='size of val set')
     parser.add_argument('--test_size', type=float, default=0.2, help='size of test set')
     opt = parser.parse_known_args()[0]
     return opt

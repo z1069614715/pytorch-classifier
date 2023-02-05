@@ -637,6 +637,8 @@ def visual_tsne(feature, y_true, path, labels, save_path):
 
 def predict_single_image(path, model, test_transform, DEVICE, half=False):
     pil_img = Image.open(path)
+    if pil_img.mode != 'RGB':
+        pil_img = pil_img.convert('RGB')
     tensor_img = test_transform(pil_img).unsqueeze(0).to(DEVICE)
     tensor_img = (tensor_img.half() if (half and torch.cuda.is_available()) else tensor_img)
     with torch.inference_mode():

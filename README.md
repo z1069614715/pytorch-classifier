@@ -10,6 +10,7 @@ image classifier implement in pytoch.
 5. **[Some explanation](#Someexplanation)**
 6. **[TODO](#TODO)**
 7. **[Reference](#Reference)**
+8. **[Update Log](#Reference)**
 
 <a id="Introduction"></a>
 ## Introduction  
@@ -350,8 +351,7 @@ image classifier implement in pytoch.
 ## Some explanation  
   1. 关于cpu和gpu的问题.  
     
-    每一个程序都有检测cuda是否可用的功能,因此如果使用者的环境安装了gpu版的pytorch,则其会在gpu上运行程序.  
-    torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    其根据device参数选择对应的device,如果设置了gpu,但是安装的是cpu版本的torch,其会使用cpu运行.
   2. 关于processing.py的一些具体解释.  
 
     这个文件帮助我们去划分一个数据集.
@@ -633,3 +633,50 @@ image classifier implement in pytoch.
   https://github.com/AberHu/Knowledge-Distillation-Zoo  
   https://github.com/yoshitomo-matsubara/torchdistill  
   https://github.com/albumentations-team/albumentations  
+
+## Update Log
+详细更新日志可以到[CSDN](https://blog.csdn.net/qq_37706472/article/details/128889634?spm=1001.2014.3001.5501)去看.
+
+### pytorch-classifier v1.1 更新日志
+
+- **2022.11.8**
+    1. 修改processing.py的分配数据集逻辑,之前是先分出test_size的数据作为测试集,然后再从剩下的数据里面分val_size的数据作为验证集,这种分数据的方式,当我们的val_size=0.2和test_size=0.2,最后出来的数据集比例不是严格等于6:2:2,现在修改为等比例的划分,也就是现在的逻辑分割数据集后严格等于6:2:2.
+    2. 参考yolov5,训练中的模型保存改为FP16保存.(在精度基本保持不变的情况下,模型相比FP32小一半)
+    3. metrice.py和predict.py新增支持FP16推理.(在精度基本保持不变的情况下,速度更加快)
+
+- **2022.11.9**
+    1. 支持[albumentations库](https://github.com/albumentations-team/albumentations)的数据增强.
+    2. 训练过程新增[R-Drop](https://github.com/dropreg/R-Drop),具体在main.py中添加--rdrop参数即可.
+
+- **2022.11.10**
+	1. 利用Pycm库进行修改metrice.py中的可视化内容.增加指标种类.
+
+- **2022.11.11**
+	1. 支持EMA(Exponential Moving Average),具体在main.py中添加--ema参数即可.
+	2. 修改早停法中的--patience机制,当--patience参数为0时,停止使用早停法.
+	3. 知识蒸馏中增加了一些实验数据.
+	4. 修复一些bug.
+
+### pytorch-classifier v1.2 更新日志
+
+1. 新增export.py,支持导出(onnx, torchscript, tensorrt)模型.  
+2. metrice.py支持onnx,torchscript,tensorrt的推理.  
+
+        此处在predict.py中暂不支持onnx,torchscript,tensorrt的推理的推理,原因是因为predict.py中的热力图可视化没办法在onnx、torchscript、tensorrt中实现,后续单独推理部分会额外写一部分代码.
+        在metrice.py中,onnx和torchscript和tensorrt的推理也不支持tsne的可视化,那么我在metrice.py中添加onnx,torchscript,tensorrt的推理的目的是为了测试fps和精度.
+        所以简单来说,使用metrice.py最好还是直接用torch模型,torchscript和onnx和tensorrt的推理的推理模型后续会写一个单独的推理代码.
+3. main.py,metrice.py,predict.py,export.py中增加--device参数,可以指定设备.
+4. 优化程序和修复一些bug.
+
+### pytorch-classifier v1.3 更新日志
+
+1. 增加[repghost](https://arxiv.org/abs/2211.06088)模型.
+2. 推理阶段把模型中的conv和bn进行fuse.
+3. 发现mnasnet0_5有点问题,暂停使用.
+4. torch.no_grad()更换成torch.inference_mode().
+
+### pytorch-classifier v1.4 更新日志
+
+1. predict.py支持检测灰度图,其读取后会检测是否为RGB通道,不是的话会进行转换.
+2. 更新readme.md.
+3. 修复一些bug.
