@@ -16,6 +16,7 @@ from PIL import Image
 from sklearn.manifold import TSNE
 from pytorch_grad_cam import GradCAM, HiResCAM, ScoreCAM, GradCAMPlusPlus, AblationCAM, XGradCAM, EigenCAM, FullGrad
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+from pytorch_grad_cam.activations_and_gradients import ActivationsAndGradients
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from collections import OrderedDict
 from .utils_aug import rand_bbox
@@ -655,22 +656,22 @@ def predict_single_image(path, model, test_transform, DEVICE, half=False):
     return int(pred_result.argmax()), pred_result
 
 class cam_visual:
-    def __init__(self, model, test_transform, DEVICE, target_layers, opt):
+    def __init__(self, model, test_transform, DEVICE, opt):
         self.test_transform = test_transform
         self.DEVICE = DEVICE
         self.opt = opt
 
-        self.cam_model = eval(opt.cam_type)(model=deepcopy(model), target_layers=[target_layers], use_cuda=torch.cuda.is_available())
+        self.cam_model = eval(opt.cam_type)(model=model, target_layers=model.cam_layer(), use_cuda=(DEVICE.type != 'cpu'))
+        self.model = model
     
-    def __call__(self, path, label):
+    def __call__(self, path):
         pil_img = Image.open(path)
         tensor_img = self.test_transform(pil_img).unsqueeze(0).to(self.DEVICE)
-        targets = [ClassifierOutputTarget(label)]
-
+        
         if len(tensor_img.shape) == 5:
-            grayscale_cam_list = [self.cam_model(input_tensor=tensor_img[:, i], targets=targets) for i in range(tensor_img.size(1))]
+            grayscale_cam_list = [self.cam_model(input_tensor=tensor_img[:, i], targets=None) for i in range(tensor_img.size(1))]
         else:
-            grayscale_cam_list = [self.cam_model(input_tensor=tensor_img, targets=targets)]
+            grayscale_cam_list = [self.cam_model(input_tensor=tensor_img, targets=None)]
         
         grayscale_cam = np.concatenate(grayscale_cam_list, 0).mean(0)
         grayscale_cam = cv2.resize(grayscale_cam, pil_img.size)

@@ -3,7 +3,7 @@ import torch.nn as nn
 import model as models
 from thop import clever_format, profile
 
-def select_model(name, num_classes, input_shape, channels, pretrained=False):
+def select_model(name, num_classes, input_shape=None, channels=None, pretrained=False):
     if 'shufflenet_v2' in name:
         model = eval('models.{}(pretrained={})'.format(name, pretrained))
         model.fc = nn.Sequential(
@@ -118,22 +118,22 @@ def select_model(name, num_classes, input_shape, channels, pretrained=False):
     else:
         raise 'Unsupported Model Name.'
 
+    if input_shape and channels:
     # 计算参数量和flops
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dummy_input = torch.randn(1, channels, input_shape[0], input_shape[1]).to(device)
-    flops, params = profile(model.to(device), (dummy_input,), verbose=False)
-    #--------------------------------------------------------#
-    #   flops * 2是因为profile没有将卷积作为两个operations
-    #   有些论文将卷积算乘法、加法两个operations。此时乘2
-    #   有些论文只考虑乘法的运算次数，忽略加法。此时不乘2
-    # --------------------------------------------------------#
-    # flops = flops * 2
-    flops, params = clever_format([flops, params], "%.3f")
-    print('Select Model: {}'.format(name))
-    print('Total FLOPS: %s' % (flops))
-    print('Total params: %s' % (params))
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        dummy_input = torch.randn(1, channels, input_shape[0], input_shape[1]).to(device)
+        flops, params = profile(model.to(device), (dummy_input,), verbose=False)
+        #--------------------------------------------------------#
+        #   flops * 2是因为profile没有将卷积作为两个operations
+        #   有些论文将卷积算乘法、加法两个operations。此时乘2
+        #   有些论文只考虑乘法的运算次数，忽略加法。此时不乘2
+        # --------------------------------------------------------#
+        # flops = flops * 2
+        flops, params = clever_format([flops, params], "%.3f")
+        print('Select Model: {}'.format(name))
+        print('Total FLOPS: %s' % (flops))
+        print('Total params: %s' % (params))
     model.name = name
-
     return model
 
 if __name__ == '__main__':

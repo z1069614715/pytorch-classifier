@@ -52,7 +52,7 @@ image classifier implement in pytoch.
 - **简单的安装过程**  
   1. 安装好pytorch, torchvision(pytorch==1.12.0+ torchvision==0.13.0+)  
     可以在[pytorch](https://pytorch.org/get-started/previous-versions/)官网找到对应的命令进行安装.
-  2. pip install -r requirements.txt
+  2. pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 - **人性化的设定**
   1. 大部分可视化数据(混淆矩阵,tsne,每个类别的指标)都会以csv或者log的格式保存到本地,方便后期美工图像.
@@ -245,7 +245,7 @@ image classifier implement in pytoch.
     是否采用测试阶段的数据增强.  
   - **cam_visual**  
     default: False  
-    是否进行热力图可视化.  
+    是否进行热力图可视化.(目前只支持在cpu上进行可视化热力图)  
   - **cam_type**  
     type: string, default: GradCAMPlusPlus, choices: ['GradCAM', 'HiResCAM', 'ScoreCAM', 'GradCAMPlusPlus', 'AblationCAM', 'XGradCAM', 'EigenCAM', 'FullGrad']  
     热力图可视化的类型.  
@@ -533,7 +533,7 @@ image classifier implement in pytoch.
 
     1. 在predict.py中的--cam_type参数,可以选择各种各样的热力图计算方法,如果遇到这个效果不好可以进行更换,当然效果不好除了跟热力图的计算方法有关系之外还有是你选择的层.
     2. 在第一点中说到的层,热力图可视化需要选择层进行计算,这个是在predict.py中的cam_visual方法定义中进行定义.
-      例如这样 cam_model = cam_visual(model, test_transform, DEVICE, model.cam_layer(), opt) 这个model.cam_layer()就是选择的层,默认就是卷积特征的最后一个block,这个可以在model文件夹中的每个模型文件中的模型进行修改.
+      例如这样 cam_model = cam_visual(model, test_transform, DEVICE, model.cam_layer(), opt) 这个model.cam_layer()就是选择的层,默认就是卷积特征的最后一个layer,这个可以在model文件夹中的每个模型文件中的模型进行修改.
   
   13. 关于类别平衡的问题.
 
@@ -680,3 +680,10 @@ image classifier implement in pytoch.
 1. predict.py支持检测灰度图,其读取后会检测是否为RGB通道,不是的话会进行转换.
 2. 更新readme.md.
 3. 修复一些bug.
+
+### pytorch-classifier v1.5 更新日志
+
+1. 更新readme.md
+2. 修改predict.py中的读取模型方式.
+3. 修复predict.py中批量预测保存图片时候的内存溢出问题.
+4. 修复predict.py中热力图可视化的报错问题,但是目前只支持cpu状态下可视化热力图.

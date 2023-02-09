@@ -383,7 +383,7 @@ class EfficientNet(nn.Module):
             return x
 
     def cam_layer(self):
-        return self.features[-1]
+        return self.features[-5:]
     
     def switch_to_deploy(self):
         new_block = []
